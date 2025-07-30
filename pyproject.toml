@@ -1,0 +1,33 @@
+[project]
+name = "ChimeraX-CarbVis"
+version = "0.1"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Andre Toerien", email = "TRNAND009@myuct.ac.za" },
+]
+description = "Carbohydrate-specific visualisations for ChimeraX"
+dependencies = ["ChimeraX-Core==1.10"]
+dynamic = ["classifiers", "requires-python"]
+
+[tool.chimerax]
+min-session-version = 1
+max-session-version = 1
+categories = ["General"]
+classifiers = ["Development Status :: 3 - Alpha"]
+
+[tool.chimerax.command.paperchain]
+category = "General"
+description = "Description"
+
+[tool.chimerax.command.twister]
+category = "General"
+description = "Also Description"
+
+[tool.basedpyright]
+include = ["src"]
+typeCheckingMode = "standard"
+
+[build-system]
+requires = ["setuptools", "ChimeraX-BundleBuilder"]
+build-backend = "chimerax.bundle_builder.cx_pep517"
