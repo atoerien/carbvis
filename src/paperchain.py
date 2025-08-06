@@ -114,7 +114,7 @@ def _make_paperchain_graphics(
     maxringsize = 10
     bipyramid_height = 1.0
 
-    rings = find_small_rings(structure.atoms, maxringsize)
+    rings = find_small_rings(structure, maxringsize)
 
     vertices = []
     normals = []

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 import numpy as np
-from chimerax.atomic import Atom, Atoms, Element
+from chimerax.atomic import Atom, Element, Structure
 
 
 @dataclass
@@ -20,12 +20,6 @@ class SmallRing:
 
     atoms: list[Atom] = field(default_factory=lambda: [])
     orientated: bool = field(default=False)
-
-    def copy(self):
-        return SmallRing(
-            atoms=self.atoms.copy(),
-            orientated=self.orientated,
-        )
 
     def get_ring_coords(self):
         n = len(self.atoms)
@@ -115,14 +109,10 @@ class SmallRingLinkages:
         return False
 
 
-def find_small_rings(atoms: Atoms, maxringsize: int):
-    # (src, dest)
-    back_edges = find_back_edges(atoms)
-    rings = find_small_rings_from_back_edges(atoms, back_edges, maxringsize)
-
-    print(f"BACK EDGES: {len(back_edges)}")
-    # for src, dest in back_edges:
-    #     print(f"  SRC: {src}, DST: {dest}")
+def find_small_rings(structure: Structure, maxringsize: int):
+    # TODO: cross_residue=True causes hang on GBS_II_12RU_skip200
+    rings = structure.rings(cross_residue=False, all_size_threshold=maxringsize)
+    rings = [SmallRing(list(ring.ordered_atoms)) for ring in rings]
 
     print(f"SMALL RINGS: {len(rings)}")
     # for ring in rings:
@@ -141,182 +131,6 @@ def find_small_rings(atoms: Atoms, maxringsize: int):
 
 INTREE_NOT = -1  # not in tree
 INTREE_NOPARENT = -2  # no parent
-
-
-def find_back_edges(atoms: Atoms):
-    back_edges: list[tuple[Atom, Atom]] = []
-
-    intree_parents: dict[Atom, Atom | None] = {}
-
-    for atom in atoms:
-        if atom not in intree_parents:  # not been visited
-            find_connected_subgraph_back_edges(
-                atom,
-                back_edges,
-                intree_parents,
-            )
-
-    return back_edges
-
-
-def find_connected_subgraph_back_edges(
-    atom: Atom,
-    back_edges: list[tuple[Atom, Atom]],
-    intree_parents: dict[Atom, Atom | None],
-):
-    node_stack = [atom]
-    intree_parents[atom] = None  # in tree, but doesn't have parent
-
-    while node_stack:
-        cur_atom = node_stack.pop()
-        parent_atom = intree_parents[cur_atom]
-
-        for child_atom in cur_atom.neighbors:
-            child_atom: Atom
-            if child_atom in intree_parents:
-                # back-edge found
-                if child_atom != parent_atom and id(child_atom) > id(cur_atom):
-                    # we ignore edges back to the parent
-                    # and only add each back edge once
-                    # (it'll crop up twice since each bond is listed on both atoms)
-                    back_edges.append((cur_atom, child_atom))
-            else:
-                # extended tree
-                intree_parents[child_atom] = cur_atom
-                node_stack.append(child_atom)
-
-
-def find_small_rings_from_back_edges(
-    atoms: Atoms,
-    back_edges: list[tuple[Atom, Atom]],
-    maxringsize: int,
-):
-    rings: list[SmallRing] = []
-
-    used_edges: set[tuple[Atom, Atom]] = set()
-    used_atoms: set[Atom] = set()
-
-    # cap the peak number of rings to find based on the size of the
-    # input structure. This should help prevent unusual structures
-    # with very high connectivity, such as silicon nanodevices from
-    # blowing up the ring search code
-    max_rings = 2000 + int(100.0 * (len(atoms) ** 0.5))
-
-    for back_edge in back_edges:
-        src, dest = back_edge
-        ring = SmallRing(atoms=[src, dest])
-
-        # first atom is not marked used, since we're allowed to re-use it.
-        used_atoms.add(dest)
-
-        find_small_rings_from_partial(
-            rings,
-            ring,
-            maxringsize,
-            used_edges,
-            used_atoms,
-        )
-
-        if len(rings) > max_rings:
-            # TODO: log
-            print(
-                f"Maximum number of rings ({max_rings}) exceeded. "
-                f"Stopped looking for rings after {len(rings)} rings found."
-            )
-            break
-
-        used_edges.add(back_edge)
-
-        # remove last atom from used_atoms
-        used_atoms.remove(dest)
-
-    return rings
-
-
-def find_small_rings_from_partial(
-    rings: list[SmallRing],
-    ring: SmallRing,
-    maxringsize: int,
-    used_edges: set[tuple[Atom, Atom]],
-    used_atoms: set[Atom],
-):
-    atom_stack: list[Atom] = [ring.atoms[-1]]
-    bond_pos_stack: list[int] = [0]
-
-    while atom_stack:
-        cur_atom = atom_stack.pop()
-        cur_atom_neighbors: list[Atom] = cur_atom.neighbors
-        next_bond_pos = bond_pos_stack.pop()
-
-        do_pop = False  # whether we need to pop the current atom
-
-        if len(ring.atoms) > maxringsize:
-            do_pop = True
-
-        if next_bond_pos == 0 and not do_pop:
-            barred = False
-            closes = False
-
-            for child_atom in cur_atom_neighbors:
-                # check that this is not an edge immediately back to the previous atom
-                if child_atom == ring.atoms[-2]:
-                    continue
-
-                # check that this is not an atom we've included
-                # (an exception is the first atom, which we're allowed to try add, obviously :)
-                if child_atom in used_atoms:
-                    barred = True
-                    continue
-
-                # check is this not a back edge which has already been used
-                if (cur_atom, child_atom) in used_edges:
-                    if child_atom == ring.atoms[0]:
-                        barred = True  # used back-edge which closes the ring counts as barred
-                    continue
-
-                # check whether ring closes
-                if child_atom == ring.atoms[0]:
-                    closes = True
-                    continue
-
-            if closes and not barred:
-                rings.append(ring.copy())
-
-            if closes or barred:
-                # adding this atom would create a barred ring, so skip to next atom on stack
-                do_pop = True
-
-        if not do_pop:
-            for i in range(next_bond_pos, len(cur_atom_neighbors)):
-                child_atom = cur_atom_neighbors[i]
-
-                # check that this is not an edge immediately back to the previous atom
-                if child_atom == ring.atoms[-2]:
-                    continue
-
-                # check is this not a back edge which has already been used
-                if (cur_atom, child_atom) in used_edges:
-                    continue
-
-                # Append child atom and go deeper
-                ring.atoms.append(child_atom)
-                used_atoms.add(child_atom)
-
-                # push current state and new state onto stack and recurse
-                atom_stack.append(cur_atom)
-                bond_pos_stack.append(i + 1)
-                atom_stack.append(child_atom)
-                bond_pos_stack.append(0)
-                break
-            else:
-                # we finished the children, pop one parent
-                do_pop = True
-
-        if do_pop and atom_stack:
-            # finished with cur_atom and all its children
-            # clean up before returning from recurse
-            ring.atoms.pop()
-            used_atoms.remove(cur_atom)
 
 
 def orientate_small_rings(rings: list[SmallRing]):
@@ -399,6 +213,7 @@ def find_small_ring_linkages(rings: list[SmallRing]):
                 used_atoms,
             )
 
+    print(f"LINKAGES: {len(linkages.paths)}")
     return linkages
 
 

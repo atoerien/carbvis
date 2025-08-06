@@ -293,9 +293,8 @@ def _make_twister_graphics(
     rib_width = 0.3
     rib_height = 0.05
 
-    rings = find_small_rings(structure.atoms, maxringsize)
+    rings = find_small_rings(structure, maxringsize)
     linkages = find_small_ring_linkages(rings)
-    print(f"Linkages: {len(linkages.links)} links, {len(linkages.paths)} paths")
 
     # Threshold to determine when we have a reliable
     # rotation axis to rotate a frame about
