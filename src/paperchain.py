@@ -4,10 +4,11 @@ import numpy as np
 from chimerax.atomic import Structure
 from chimerax.atomic.changes import Changes
 from chimerax.core.session import Session
+from chimerax.graphics import Texture
 
 from .carbs import CarbRing, find_rings
 from .model import CarbVisModel
-from .utils import FloatArray, color_float_to_ubyte, time
+from .utils import FloatArray, Frame, color_float_to_ubyte, time
 
 
 def cremer_pople_ring_pucker(ring: CarbRing) -> float:
@@ -85,6 +86,86 @@ def colormap(pucker_sum: float) -> FloatArray:
     return rgb
 
 
+def make_texture(
+    formula="stripes",
+    size=1024,
+    period=64,
+    duty=0.5,
+    on_color=255,
+    off_color=0,
+):
+    """
+    Generate a procedural texture pattern.
+
+    Parameters:
+        formula: one of
+            'stripes', 'grid', 'diamond',
+            'rings', 'waves'
+        size: texture size in pixels (square)
+        period: pixel distance between repeating features
+        duty: fraction of each period that is 'off' (0.0-1.0)
+        on_color: int 0-255 or (R,G,B) tuple for 'on' pixels
+        off_color: int 0-255 or (R,G,B) tuple for 'off' pixels
+    """
+
+    # allow int or tuple color
+    def to_rgb(c):
+        if isinstance(c, (tuple, list, np.ndarray)):
+            return np.array(c, dtype=np.uint8)
+        else:
+            return np.array((c, c, c), dtype=np.uint8)
+
+    on_rgb = to_rgb(on_color)
+    off_rgb = to_rgb(off_color)
+
+    y, x = np.mgrid[0:size, 0:size]
+    cx, cy = size // 2, size // 2
+
+    if formula == "stripes":
+        mask = (y % period) < (period * duty)
+    elif formula == "grid":
+        mask = ((x % period) < (period * duty)) | ((y % period) < (period * duty))
+    elif formula == "diamond":
+        d = np.abs(x - cx) + np.abs(y - cy)
+        mask = (d % period) < (period * duty)
+    elif formula == "rings":
+        r = np.hypot(x - cx, y - cy)
+        mask = (r % period) < (period * duty)
+    elif formula == "waves":
+        wave_y = y + np.sin(x / period * 2 * np.pi) * (0.5 * period * duty)
+        mask = (wave_y % period) < (period * duty)
+    else:
+        raise ValueError(f"Unknown formula '{formula}'")
+
+    tex = np.where(mask[..., None], off_rgb, on_rgb).astype(np.uint8)
+    return tex
+
+
+def ring_tex(ring_coords: FloatArray, frame: Frame) -> FloatArray:
+    n = len(ring_coords)
+
+    # project coordinates down into the (forward, right) plane
+    uv2d = np.empty((n, 2), dtype=np.float32)
+    radii = np.empty(n, dtype=np.float32)
+    for i, p in enumerate(ring_coords):
+        dr = p - frame.origin
+        dr_plane = dr - np.dot(dr, frame.up) * frame.up
+        x = np.dot(dr_plane, frame.forward)
+        y = np.dot(dr_plane, frame.right)
+        uv2d[i] = (x, y)
+        radii[i] = np.hypot(x, y)
+
+    # scale and translate to [0, 1] texture space
+    r_max = radii.max()
+    if r_max == 0:
+        # degenerate: all points at centre
+        tex = np.full((n, 2), 0.5)
+    else:
+        tex = uv2d / (2.0 * r_max) + 0.5
+
+    return tex
+
+
 class PaperChainModel(CarbVisModel):
     def __init__(
         self,
@@ -96,6 +177,15 @@ class PaperChainModel(CarbVisModel):
         if name is None:
             name = f"{structure.name} PaperChain"
         super().__init__(session, structure, name, update)
+
+        tex = make_texture(
+            formula="waves",
+            period=128,
+            duty=0.5,
+            on_color=255,
+            off_color=128,
+        )
+        self.texture = Texture(tex)
 
     def _do_auto_update(self, changes: Changes):
         super()._do_auto_update(changes)
@@ -109,11 +199,17 @@ class PaperChainModel(CarbVisModel):
         # FIXME: not hardcode
         maxringsize = 10
         bipyramid_height = 0.5
+        have_texture = self.texture is not None
+
+        # NOTE: should point to a white part of the texture
+        # TODO: make this better
+        TOP_TEXTURE_COORD = (0.49, 0.49)
 
         vertices = []
         normals = []
         triangles = []
         vcolors = []
+        texcoords = []
 
         rings = find_rings(self.structure, maxringsize)
 
@@ -124,23 +220,30 @@ class PaperChainModel(CarbVisModel):
             color = colormap(pucker_sum)
 
             ring_coords = ring.coords
-            centroid, normal = ring.get_centroid_and_normal()
+            frame = ring.get_frame()
 
-            x = 0.5 * bipyramid_height * normal
-            top = centroid + x
-            bottom = centroid - x
+            x = 0.5 * bipyramid_height * frame.up
+            top = frame.origin + x
+            bottom = frame.origin - x
 
             triangle_offset = len(vertices)
 
             vertices.append(top)
-            normals.append(normal)
+            normals.append(frame.up)
             vcolors.append(color)
 
             vertices.append(bottom)
-            normals.append(-normal)
+            normals.append(-frame.up)
             vcolors.append(color)
 
-            # draw top half
+            if have_texture:
+                tex = ring_tex(ring_coords, frame)
+
+                texcoords.append(TOP_TEXTURE_COORD)
+                texcoords.append((0.5, 0.5))
+            else:
+                tex = None
+
             for i in range(n):
                 # calculate next ring position (wrapping as necessary)
                 next_i = i + 1
@@ -161,6 +264,8 @@ class PaperChainModel(CarbVisModel):
                 vertices.append(curvec)
                 normals.append(normtop)
                 vcolors.append(color)
+                if have_texture:
+                    texcoords.append(TOP_TEXTURE_COORD)
 
                 triangles.append(
                     (
@@ -173,6 +278,9 @@ class PaperChainModel(CarbVisModel):
                 vertices.append(curvec)
                 normals.append(normbot)
                 vcolors.append(color)
+                if have_texture:
+                    assert tex is not None
+                    texcoords.append(tex[i])
 
                 # order different to keep anticlockwise winding
                 triangles.append(
@@ -187,6 +295,8 @@ class PaperChainModel(CarbVisModel):
         na = np.array(normals, dtype=np.float32).reshape(-1, 3)
         ta = np.array(triangles, dtype=np.int32).reshape(-1, 3)
         ca = np.array(vcolors, dtype=np.float32).reshape(-1, 3)
+        tc = np.array(texcoords, dtype=np.float32).reshape(-1, 2)
 
         self.set_geometry(va, na, ta)
         self.set_vertex_colors(color_float_to_ubyte(ca))
+        self.texture_coordinates = tc

@@ -103,6 +103,26 @@ class CarbRing:
 
         return centroid, normal
 
+    def get_frame(self) -> Frame:
+        centroid, up = self.get_centroid_and_normal()
+
+        # use the first atom as forward, should not be parallel to up
+        forward = self[0].coord - centroid
+        forward -= np.dot(forward, up) * up
+        if np.allclose(forward, 0.0):
+            # fallback: pick a world axis
+            if abs(up[0]) < 0.9:
+                forward = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            else:
+                forward = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+            forward = forward - np.dot(forward, up) * up
+        forward /= np.linalg.norm(forward)
+
+        # up and forward are length 1, no need to norm
+        right = np.cross(up, forward)
+
+        return Frame(centroid, forward, right, up)
+
 
 @dataclass
 class CarbLinkage:
