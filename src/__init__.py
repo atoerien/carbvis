@@ -9,10 +9,11 @@ class _CarbVisAPI(BundleAPI):
     def register_command(bi: BundleInfo, ci: CommandInfo, logger: Logger):  # pyright: ignore[reportIncompatibleMethodOverride]
         from . import cmd
 
-        if hasattr(cmd, ci.name):
-            fn = getattr(cmd, ci.name)
-            desc = getattr(cmd, f"{ci.name}_desc")
-        else:
+        name = ci.name.replace(" ", "_")
+        try:
+            fn: cmd.CmdFunc = getattr(cmd, name)
+            desc = fn.desc
+        except AttributeError:
             raise ValueError(f"unknown command: {ci.name}")
 
         if desc.synopsis is None:

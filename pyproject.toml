@@ -7,7 +7,7 @@ authors = [
     { name = "Andre Toerien", email = "TRNAND009@myuct.ac.za" },
 ]
 description = "Carbohydrate-specific visualisations for ChimeraX"
-dependencies = ["ChimeraX-Core==1.10"]
+dependencies = ["ChimeraX-Core~=1.10.0"]
 dynamic = ["classifiers", "requires-python"]
 
 [tool.chimerax]
@@ -18,11 +18,11 @@ classifiers = ["Development Status :: 3 - Alpha"]
 
 [tool.chimerax.command.paperchain]
 category = "General"
-description = "Description"
+description = "PaperChain description"
 
 [tool.chimerax.command.twister]
 category = "General"
-description = "Also Description"
+description = "Twister description"
 
 [tool.basedpyright]
 include = ["src"]

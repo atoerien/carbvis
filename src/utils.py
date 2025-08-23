@@ -1,8 +1,25 @@
+from __future__ import annotations
+
 import functools
-from typing import Callable, ParamSpec, TypeVar
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar
+
+import numpy as np
+from numpy.typing import NDArray
 
 TIMING = False
 TIMING = True
+
+# stop complaining when assigning float32 to float
+if TYPE_CHECKING:
+    float = float | np.floating
+
+
+FloatArray = NDArray[np.float32]
+IntArray = NDArray[np.int32]
+UByteArray = NDArray[np.uint8]
+
+T = TypeVar("T")
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -24,3 +41,64 @@ def time(fn: Callable[P, R]) -> Callable[P, R]:
         return result
 
     return wrapper
+
+
+def rotate(v: FloatArray, axis: FloatArray, angle: float):
+    """Rotate v about axis by angle using Rodrigues' formula."""
+
+    axis = axis / np.linalg.norm(axis)
+    sin_a = np.sin(angle)
+    cos_a = np.cos(angle)
+    return cos_a * v + (1 - cos_a) * np.dot(axis, v) * axis + sin_a * np.cross(axis, v)
+
+
+def color_float_to_ubyte(arr: FloatArray) -> UByteArray:
+    """
+    Convert float colors in [0, 1] to uint8 in [0, 255].
+    Supports shape (..., 3) or (..., 4).
+    If RGB (last dim=3), appends alpha=255.
+    """
+
+    if arr.shape[-1] not in (3, 4):
+        raise ValueError("Last dimension must be 3 (RGB) or 4 (RGBA)")
+
+    # Avoid modifying caller's array
+    arr = arr.copy()
+
+    # Clamp to [0, 1] and scale to [0, 255]
+    np.clip(arr, 0.0, 1.0, out=arr)
+    arr *= 255.0
+
+    # RGBA
+    if arr.shape[-1] == 4:
+        return arr.astype(np.uint8)
+
+    # RGB, append 255
+    ret = np.empty((*arr.shape[:-1], 4), dtype=np.uint8)
+    ret[..., :3] = arr
+    ret[..., 3] = 255
+    return ret
+
+
+@dataclass(slots=True)
+class Frame:
+    """
+    Frame: A frame of reference at a point.
+    A frame has an origin and 3 basis vectors, plus an approximate cumulative arc
+    length (used for texturing).
+    """
+
+    origin: FloatArray
+    forward: FloatArray
+    right: FloatArray
+    up: FloatArray
+    arclength: float = 0.0
+
+    def copy(self):
+        return Frame(
+            origin=np.copy(self.origin),
+            forward=np.copy(self.forward),
+            right=np.copy(self.right),
+            up=np.copy(self.up),
+            arclength=self.arclength,
+        )
