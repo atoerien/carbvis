@@ -306,6 +306,8 @@ class TwisterModel(CarbVisModel):
         triangles = []
         vcolors = []
 
+        disk_places = set()
+
         for link in linkages:
             start_ring = link.start_ring
             start_centroid, start_normal = start_ring.get_centroid_and_normal()
@@ -603,34 +605,38 @@ class TwisterModel(CarbVisModel):
                 )
 
                 # Draw hexagonal disks for joining rings
-                # XXX: do this only once per ring
-                twister_draw_hexagon(
-                    vertices,
-                    normals,
-                    triangles,
-                    vcolors,
-                    start_centroid,
-                    start_frame.right,
-                    start_frame.up,
-                    rib_height,
-                    rib_width,
-                    top_color,
-                    bottom_color,
-                )
-
-                twister_draw_hexagon(
-                    vertices,
-                    normals,
-                    triangles,
-                    vcolors,
-                    end_centroid,
-                    end_frame.right,
-                    end_frame.up,
-                    rib_height,
-                    rib_width,
-                    top_color,
-                    bottom_color,
-                )
+                start_centroid_tuple = tuple(start_centroid)
+                if start_centroid_tuple not in disk_places:
+                    disk_places.add(start_centroid_tuple)
+                    twister_draw_hexagon(
+                        vertices,
+                        normals,
+                        triangles,
+                        vcolors,
+                        start_centroid,
+                        start_frame.right,
+                        start_frame.up,
+                        rib_height,
+                        rib_width,
+                        top_color,
+                        bottom_color,
+                    )
+                end_centroid_tuple = tuple(end_centroid)
+                if end_centroid_tuple not in disk_places:
+                    disk_places.add(end_centroid_tuple)
+                    twister_draw_hexagon(
+                        vertices,
+                        normals,
+                        triangles,
+                        vcolors,
+                        end_centroid,
+                        end_frame.right,
+                        end_frame.up,
+                        rib_height,
+                        rib_width,
+                        top_color,
+                        bottom_color,
+                    )
             else:
                 # Draw start and end end caps
                 # Start end caps
