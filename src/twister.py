@@ -292,6 +292,7 @@ class TwisterModel(CarbVisModel):
         rib_width = 0.3
         rib_height = 0.05
         color_bydihedral = True
+        gum_twist = True
 
         rings = find_rings(self.structure, maxringsize)
         linkages = find_linkages(rings)
@@ -419,8 +420,8 @@ class TwisterModel(CarbVisModel):
             if np.dot(np.cross(end_right, end_frame.right), end_tangent) > 0:
                 correction_angle *= -1
 
-            inc_angle = correction_angle / rib_steps
-            curr_angle = -inc_angle
+            curr_angle = 0
+            total_arclength = frames[-1].arclength
 
             if color_bydihedral:
                 angles = link.calc_angles()
@@ -434,7 +435,14 @@ class TwisterModel(CarbVisModel):
             triangle_offset = len(vertices)
 
             for i, frame in enumerate(frames):
-                curr_angle += inc_angle
+                if gum_twist:
+                    inc_angle = (
+                        correction_angle
+                        * np.sin(np.pi * (i + 0.5) / rib_steps)
+                        * np.sin(np.pi / (2 * rib_steps))
+                    )
+                else:
+                    inc_angle = correction_angle / rib_steps
 
                 # Apply correcting rotation:
                 # Rotate frame angle curr_angle about frame.forward
@@ -442,10 +450,19 @@ class TwisterModel(CarbVisModel):
                 frame.right = rotate(frame.right, frame.forward, curr_angle)
                 frame.up = rotate(frame.up, frame.forward, curr_angle)
 
+                curr_angle += inc_angle
+
+                if gum_twist:
+                    wave = np.cos(np.pi * frame.arclength / total_arclength) ** 2
+                    width_factor = 0.75 * abs(inc_angle * rib_steps / np.pi)
+                    width = rib_width * (width_factor * wave + (1 - width_factor))
+                else:
+                    width = rib_width
+
                 # vertices (of this frame's rectangle)
 
                 # top right (index +0)
-                vert = frame.origin + rib_height * frame.up + rib_width * frame.right
+                vert = frame.origin + rib_height * frame.up + width * frame.right
                 vertices.append(vert)
                 vcolors.append(top_color)
                 norm = frame.up + frame.right
@@ -453,7 +470,7 @@ class TwisterModel(CarbVisModel):
                 normals.append(norm)
 
                 # bottom right (index +1)
-                vert = frame.origin - rib_height * frame.up + rib_width * frame.right
+                vert = frame.origin - rib_height * frame.up + width * frame.right
                 vertices.append(vert)
                 vcolors.append(bottom_color)
                 norm = -frame.up + frame.right
@@ -461,7 +478,7 @@ class TwisterModel(CarbVisModel):
                 normals.append(norm)
 
                 # bottom left (index +2)
-                vert = frame.origin - rib_height * frame.up - rib_width * frame.right
+                vert = frame.origin - rib_height * frame.up - width * frame.right
                 vertices.append(vert)
                 vcolors.append(bottom_color)
                 norm = -frame.up - frame.right
@@ -469,7 +486,7 @@ class TwisterModel(CarbVisModel):
                 normals.append(norm)
 
                 # top left (index +3)
-                vert = frame.origin + rib_height * frame.up - rib_width * frame.right
+                vert = frame.origin + rib_height * frame.up - width * frame.right
                 vertices.append(vert)
                 vcolors.append(top_color)
                 norm = frame.up - frame.right
