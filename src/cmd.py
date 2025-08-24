@@ -1,11 +1,12 @@
 from typing import Callable, Generic, ParamSpec, TypeVar, cast
 
-from chimerax.atomic import Structure, Structures, all_structures
-from chimerax.atomic.args import StructuresArg
-from chimerax.core.commands import BoolArg, CmdDesc
+from chimerax.atomic import Bonds, Structure, Structures, all_bonds, all_structures
+from chimerax.atomic.args import BondsArg, StructuresArg
+from chimerax.core.commands import BoolArg, CmdDesc, EmptyArg, Or
 from chimerax.core.errors import UserError
 from chimerax.core.session import Session
 
+from .coloring import color_bonds_bydihedral
 from .model import CarbVisModel
 from .paperchain import PaperChainModel
 from .twister import TwisterModel
@@ -139,6 +140,18 @@ def twister(
         models.append(model)
 
     return models
+
+
+@cmd(
+    required=[("bonds", Or(BondsArg, EmptyArg))],
+    synopsis="color by dihedral angle",
+)
+def color_bydihedral(session: Session, bonds: Bonds | None):
+    """Color by dihedral description"""
+
+    if bonds is None:
+        bonds = all_bonds(session)
+    color_bonds_bydihedral(bonds)
 
 
 def check_structures(structures: Structures | None, session: Session) -> Structures:

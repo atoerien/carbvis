@@ -24,6 +24,10 @@ description = "PaperChain description"
 category = "General"
 description = "Twister description"
 
+[tool.chimerax.command."color bydihedral"]
+category = "General"
+description = "Color by dihedral description"
+
 [tool.basedpyright]
 include = ["src"]
 typeCheckingMode = "standard"
