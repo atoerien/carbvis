@@ -1,25 +1,16 @@
 import itertools
-from typing import TYPE_CHECKING
 
-import numpy as np
 from chimerax.atomic import Bond, Bonds, Structure
 
 from .carbs import dihedral_norm_colormap, find_linkages, find_rings
 from .utils import color_float_to_ubyte
 
-# stop complaining when assigning float32 to float
-if TYPE_CHECKING:
-    float = float | np.floating
 
-
-def color_bonds_bydihedral(bonds: Bonds):
+def color_bonds_bydihedral(bonds: Bonds, max_ring_size: int):
     for structure, bonds in bonds.by_structure:
         structure: Structure
 
-        # FIXME: not hardcode
-        maxringsize = 10
-
-        rings = find_rings(structure, maxringsize)
+        rings = find_rings(structure, max_ring_size)
         linkages = find_linkages(rings)
 
         for link in linkages:

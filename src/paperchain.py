@@ -97,20 +97,67 @@ class PaperChainModel(CarbVisModel):
         session: Session,
         structure: Structure,
         name: str | None = None,
-        update=True,
+        *,
+        update: bool,
+        bipyramid_height: float,
+        max_ring_size: int,
+        tex_formula: str | None,
     ):
         if name is None:
             name = f"{structure.name} PaperChain"
-        super().__init__(session, structure, name, update)
+        super().__init__(session, structure, name, update=update)
 
-        tex = make_texture(
-            formula="waves",
-            period=128,
-            duty=0.5,
-            on_color=255,
-            off_color=128,
-        )
-        self.texture = Texture(tex)
+        self.bipyramid_height = bipyramid_height
+        self.max_ring_size = max_ring_size
+
+        self.tex_formula = None
+        self._update_texture(tex_formula)
+
+    def update_params(
+        self,
+        *,
+        update: bool,
+        bipyramid_height: float,
+        max_ring_size: int,
+        tex_formula: str | None,
+    ):
+        if update != self.auto_update:
+            self.auto_update = update
+
+        clear_geometry = False
+        if bipyramid_height != self.bipyramid_height:
+            self.bipyramid_height = bipyramid_height
+            clear_geometry = True
+        if max_ring_size != self.max_ring_size:
+            self.max_ring_size = max_ring_size
+            clear_geometry = True
+
+        self._update_texture(tex_formula)
+
+        if clear_geometry:
+            self._clear_geometry()
+
+    def _update_texture(self, formula: str | None):
+        # TODO: make more texture params configurable
+
+        update = False
+        if formula != self.tex_formula:
+            self.tex_formula = formula
+            update = True
+
+        if update:
+            if self.texture is not None:
+                self.texture.delete_texture()
+                self.texture = None
+            if formula is not None:
+                tex = make_texture(
+                    formula=formula,
+                    period=128,
+                    duty=0.5,
+                    on_color=255,
+                    off_color=128,
+                )
+                self.texture = Texture(tex)
 
     def _do_auto_update(self, changes: Changes):
         super()._do_auto_update(changes)
@@ -121,9 +168,7 @@ class PaperChainModel(CarbVisModel):
 
     @time
     def _calc_graphics(self):
-        # FIXME: not hardcode
-        maxringsize = 10
-        bipyramid_height = 0.5
+        bipyramid_height = self.bipyramid_height
         have_texture = self.texture is not None
 
         # NOTE: should point to a white part of the texture
@@ -136,7 +181,7 @@ class PaperChainModel(CarbVisModel):
         vcolors = []
         texcoords = []
 
-        rings = find_rings(self.structure, maxringsize)
+        rings = find_rings(self.structure, self.max_ring_size)
 
         for ring in rings:
             n = len(ring.atoms)  # the number of atoms in the current ring

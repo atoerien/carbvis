@@ -15,7 +15,8 @@ class CarbVisModel(Model):
         session: Session,
         structure: Structure,
         name: str | None = None,
-        update=True,
+        *,
+        update: bool,
     ):
         self.session: Session
 

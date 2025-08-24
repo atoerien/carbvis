@@ -270,11 +270,68 @@ class TwisterModel(CarbVisModel):
         session: Session,
         structure: Structure,
         name: str | None = None,
-        update=True,
+        *,
+        update: bool,
+        start_end_centroid: bool,
+        rib_steps: int,
+        max_ring_size: int,
+        rib_width: float,
+        rib_height: float,
+        color_bydihedral: bool,
+        gum_twist: bool,
     ):
         if name is None:
             name = f"{structure.name} Twister"
-        super().__init__(session, structure, name, update)
+        super().__init__(session, structure, name, update=update)
+
+        self.start_end_centroid = start_end_centroid
+        self.rib_steps = rib_steps
+        self.max_ring_size = max_ring_size
+        self.rib_width = rib_width
+        self.rib_height = rib_height
+        self.color_bydihedral = color_bydihedral
+        self.gum_twist = gum_twist
+
+    def update_params(
+        self,
+        *,
+        update: bool,
+        start_end_centroid: bool,
+        rib_steps: int,
+        max_ring_size: int,
+        rib_width: float,
+        rib_height: float,
+        color_bydihedral: bool,
+        gum_twist: bool,
+    ):
+        if update != self.auto_update:
+            self.auto_update = update
+
+        clear_geometry = False
+        if start_end_centroid != self.start_end_centroid:
+            self.start_end_centroid = start_end_centroid
+            clear_geometry = True
+        if rib_steps != self.rib_steps:
+            self.rib_steps = rib_steps
+            clear_geometry = True
+        if max_ring_size != self.max_ring_size:
+            self.max_ring_size = max_ring_size
+            clear_geometry = True
+        if rib_width != self.rib_width:
+            self.rib_width = rib_width
+            clear_geometry = True
+        if rib_height != self.rib_height:
+            self.rib_height = rib_height
+            clear_geometry = True
+        if color_bydihedral != self.color_bydihedral:
+            self.color_bydihedral = color_bydihedral
+            clear_geometry = True
+        if gum_twist != self.gum_twist:
+            self.gum_twist = gum_twist
+            clear_geometry = True
+
+        if clear_geometry:
+            self._clear_geometry()
 
     def _do_auto_update(self, changes: Changes):
         super()._do_auto_update(changes)
@@ -285,16 +342,14 @@ class TwisterModel(CarbVisModel):
 
     @time
     def _calc_graphics(self):
-        # FIXME: not hardcode
-        start_end_centroid = True
-        rib_steps = 10
-        maxringsize = 10
-        rib_width = 0.3
-        rib_height = 0.05
-        color_bydihedral = True
-        gum_twist = True
+        start_end_centroid = self.start_end_centroid
+        rib_steps = self.rib_steps
+        rib_width = self.rib_width
+        rib_height = self.rib_height
+        color_bydihedral = self.color_bydihedral
+        gum_twist = self.gum_twist
 
-        rings = find_rings(self.structure, maxringsize)
+        rings = find_rings(self.structure, self.max_ring_size)
         linkages = find_linkages(rings)
 
         # Threshold to determine when we have a reliable

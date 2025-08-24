@@ -2,7 +2,15 @@ from typing import Callable, Generic, ParamSpec, TypeVar, cast
 
 from chimerax.atomic import Bonds, Structure, Structures, all_bonds, all_structures
 from chimerax.atomic.args import BondsArg, StructuresArg
-from chimerax.core.commands import BoolArg, CmdDesc, EmptyArg, Or
+from chimerax.core.commands import (
+    BoolArg,
+    CmdDesc,
+    EmptyArg,
+    EnumOf,
+    FloatArg,
+    IntArg,
+    Or,
+)
 from chimerax.core.errors import UserError
 from chimerax.core.session import Session
 
@@ -55,13 +63,22 @@ def cmd(
 
 @cmd(
     optional=[("structures", StructuresArg)],
-    keyword=[("replace", BoolArg), ("update", BoolArg)],
+    keyword=[
+        ("replace", BoolArg),
+        ("update", BoolArg),
+        ("bipyramid_height", FloatArg),
+        ("max_ring_size", IntArg),
+        ("tex_formula", EnumOf(("stripes", "grid", "diamond", "rings", "waves"))),
+    ],
 )
 def paperchain(
     session: Session,
     structures: Structures | None = None,
     replace=True,
     update=True,
+    bipyramid_height=1.0,
+    max_ring_size=10,
+    tex_formula=None,
 ):
     """PaperChain description"""
 
@@ -78,10 +95,22 @@ def paperchain(
         if replace:
             model = find_model(PaperChainModel, structure, session)
         if model is None:
-            model = PaperChainModel(session, structure, update=update)
+            model = PaperChainModel(
+                session,
+                structure,
+                update=update,
+                bipyramid_height=bipyramid_height,
+                max_ring_size=max_ring_size,
+                tex_formula=tex_formula,
+            )
             new = True
         else:
-            # TODO: update
+            model.update_params(
+                update=update,
+                bipyramid_height=bipyramid_height,
+                max_ring_size=max_ring_size,
+                tex_formula=tex_formula,
+            )
             new = False
 
         model.calculate_graphics()
@@ -90,7 +119,7 @@ def paperchain(
             # Add new models to open models list.
             session.models.add([model], parent=model.structure)
 
-        # Make sure replaced surfaces are displayed.
+        # Make sure replaced models are displayed.
         model.display = True
 
         models.append(model)
@@ -100,17 +129,35 @@ def paperchain(
 
 @cmd(
     optional=[("structures", StructuresArg)],
-    keyword=[("replace", BoolArg), ("update", BoolArg)],
+    keyword=[
+        ("replace", BoolArg),
+        ("update", BoolArg),
+        ("start_end_centroid", BoolArg),
+        ("rib_steps", IntArg),
+        ("max_ring_size", IntArg),
+        ("rib_width", FloatArg),
+        ("rib_height", FloatArg),
+        ("color", EnumOf(("bydihedral",))),
+        ("gum_twist", BoolArg),
+    ],
 )
 def twister(
     session: Session,
     structures: Structures | None = None,
     replace=True,
     update=True,
+    start_end_centroid=True,
+    rib_steps=10,
+    max_ring_size=10,
+    rib_width=0.3,
+    rib_height=0.05,
+    color: str | None = None,
+    gum_twist=False,
 ):
     """Twister description"""
 
     structures = check_structures(structures, session)
+    color_bydihedral = color == "bydihedral"
 
     models: list[TwisterModel] = []
 
@@ -123,10 +170,30 @@ def twister(
         if replace:
             model = find_model(TwisterModel, structure, session)
         if model is None:
-            model = TwisterModel(session, structure, update=update)
+            model = TwisterModel(
+                session,
+                structure,
+                update=update,
+                start_end_centroid=start_end_centroid,
+                rib_steps=rib_steps,
+                max_ring_size=max_ring_size,
+                rib_width=rib_width,
+                rib_height=rib_height,
+                color_bydihedral=color_bydihedral,
+                gum_twist=gum_twist,
+            )
             new = True
         else:
-            # TODO: update
+            model.update_params(
+                update=update,
+                start_end_centroid=start_end_centroid,
+                rib_steps=rib_steps,
+                max_ring_size=max_ring_size,
+                rib_width=rib_width,
+                rib_height=rib_height,
+                color_bydihedral=color_bydihedral,
+                gum_twist=gum_twist,
+            )
             new = False
 
         model.calculate_graphics()
@@ -135,7 +202,7 @@ def twister(
             # Add new models to open models list.
             session.models.add([model], parent=model.structure)
 
-        # Make sure replaced surfaces are displayed.
+        # Make sure replaced model are displayed.
         model.display = True
 
         models.append(model)
@@ -145,13 +212,20 @@ def twister(
 
 @cmd(
     optional=[("structures", StructuresArg)],
-    keyword=[("replace", BoolArg), ("update", BoolArg)],
+    keyword=[
+        ("replace", BoolArg),
+        ("update", BoolArg),
+        ("max_ring_size", IntArg),
+        ("radius", FloatArg),
+    ],
 )
 def strand(
     session: Session,
     structures: Structures | None = None,
     replace=True,
     update=True,
+    max_ring_size=10,
+    radius=0.25,
 ):
     """Strand description"""
 
@@ -168,10 +242,20 @@ def strand(
         if replace:
             model = find_model(StrandModel, structure, session)
         if model is None:
-            model = StrandModel(session, structure, update=update)
+            model = StrandModel(
+                session,
+                structure,
+                update=update,
+                max_ring_size=max_ring_size,
+                radius=radius,
+            )
             new = True
         else:
-            # TODO: update
+            model.update_params(
+                update=update,
+                max_ring_size=max_ring_size,
+                radius=radius,
+            )
             new = False
 
         model.calculate_graphics()
@@ -180,7 +264,7 @@ def strand(
             # Add new models to open models list.
             session.models.add([model], parent=model.structure)
 
-        # Make sure replaced surfaces are displayed.
+        # Make sure replaced model are displayed.
         model.display = True
 
         models.append(model)
@@ -190,14 +274,19 @@ def strand(
 
 @cmd(
     required=[("bonds", Or(BondsArg, EmptyArg))],
+    keyword=[("max_ring_size", IntArg)],
     synopsis="color by dihedral angle",
 )
-def color_bydihedral(session: Session, bonds: Bonds | None):
+def color_bydihedral(
+    session: Session,
+    bonds: Bonds | None,
+    max_ring_size=10,
+):
     """Color by dihedral description"""
 
     if bonds is None:
         bonds = all_bonds(session)
-    color_bonds_bydihedral(bonds)
+    color_bonds_bydihedral(bonds, max_ring_size)
 
 
 def check_structures(structures: Structures | None, session: Session) -> Structures:

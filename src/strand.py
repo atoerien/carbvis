@@ -254,11 +254,38 @@ class StrandModel(CarbVisModel):
         session: Session,
         structure: Structure,
         name: str | None = None,
-        update=True,
+        *,
+        update: bool,
+        max_ring_size: int,
+        radius: float,
     ):
         if name is None:
             name = f"{structure.name} Strand"
-        super().__init__(session, structure, name, update)
+        super().__init__(session, structure, name, update=update)
+
+        self.max_ring_size = max_ring_size
+        self.radius = radius
+
+    def update_params(
+        self,
+        *,
+        update: bool,
+        max_ring_size: int,
+        radius: float,
+    ):
+        if update != self.auto_update:
+            self.auto_update = update
+
+        clear_geometry = False
+        if max_ring_size != self.max_ring_size:
+            self.max_ring_size = max_ring_size
+            clear_geometry = True
+        if radius != self.radius:
+            self.radius = radius
+            clear_geometry = True
+
+        if clear_geometry:
+            self._clear_geometry()
 
     def _do_auto_update(self, changes: Changes):
         super()._do_auto_update(changes)
@@ -269,11 +296,9 @@ class StrandModel(CarbVisModel):
 
     @time
     def _calc_graphics(self):
-        # FIXME: not hardcode
-        maxringsize = 10
-        radius = 0.25
+        radius = self.radius
 
-        rings = find_rings(self.structure, maxringsize)
+        rings = find_rings(self.structure, self.max_ring_size)
         linkages = find_linkages(rings)
         chains = find_chains(linkages)
 

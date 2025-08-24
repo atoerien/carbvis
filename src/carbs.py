@@ -233,10 +233,10 @@ class CarbChain:
 
 def find_rings(
     structure: Structure,
-    maxringsize: int,
+    max_size: int,
     orientate: bool = True,
 ) -> list[CarbRing]:
-    rings = structure.rings(all_size_threshold=maxringsize)
+    rings = structure.rings(all_size_threshold=max_size)
     rings = [CarbRing(ring.ordered_atoms) for ring in rings]
 
     # print(f"RINGS: {len(rings)}")
