@@ -26,10 +26,13 @@ def draw_tube(
     radius: float = 1.0,
     segment_subdivisions: int = 20,
     circle_subdivisions: int = 16,
+    candy_cane: bool = False,
 ):
     linkages = chain.linkages
     if not linkages:
         return
+
+    color_b = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 
     points = np.empty((3 * len(linkages) + 1, 3), dtype=np.float32)
     norms = np.empty((3 * len(linkages) + 1, 3), dtype=np.float32)
@@ -116,9 +119,45 @@ def draw_tube(
 
         frames.append(frame)
 
+    if candy_cane:
+        # TODO: for single-ring side chains, ~180º flips often
+        # twist the other way as twister
+
+        twist = np.empty((3 * len(linkages) + 1, 1), dtype=np.float32)
+
+        for i, norm in enumerate(norms):
+            iframe = i * (segment_subdivisions + 1)
+            frame = frames[iframe]
+
+            t = np.arccos(
+                # float shenanigans
+                np.clip(np.dot(norm, frame.up), -1.0, 1.0)
+            )
+            if np.dot(np.cross(norm, frame.up), frame.forward) > 0:
+                t *= -1
+
+            if i != 0:
+                t_prev = twist[i - 1]
+                d = (t - t_prev + np.pi) // (2 * np.pi)
+                if d != 0:
+                    t -= d * 2 * np.pi
+
+            twist[i] = t
+
+        stwist = natural_cubic_spline(twist, segment_subdivisions, tangents=False)
+    else:
+        stwist = None
+
     triangle_offset = len(vertices)
 
     for i, frame in enumerate(frames):
+        if candy_cane:
+            # rotate frame about frame.forward (twist)
+            assert stwist is not None
+            t = stwist[i]
+            frame.right = rotate(frame.right, frame.forward, t)
+            frame.up = rotate(frame.up, frame.forward, t)
+
         a = np.linspace(0, 2 * np.pi, circle_subdivisions, endpoint=False)
         n = np.cos(a).reshape(-1, 1) * frame.up - np.sin(a).reshape(-1, 1) * frame.right
         v = frame.origin + radius * n
@@ -142,6 +181,11 @@ def draw_tube(
             for _ in range(circle_subdivisions)
         )
 
+        if candy_cane:
+            vertices.extend(v)
+            normals.extend(n)
+            vcolors.extend(color_b for _ in range(circle_subdivisions))
+
         if i == len(frames) - 1:
             # end cap vertices
             vertices.extend(v)
@@ -150,15 +194,36 @@ def draw_tube(
 
             continue  # no normal triangles for the last frame
 
-        offset = triangle_offset + (i + 1) * circle_subdivisions
-        offset_next = triangle_offset + (i + 2) * circle_subdivisions
-        for j in range(circle_subdivisions):
-            k0 = offset + j
-            k1 = offset + (j + 1) % circle_subdivisions
-            k2 = offset_next + j
-            k3 = offset_next + (j + 1) % circle_subdivisions
-            triangles.append((k0, k2, k1))
-            triangles.append((k1, k2, k3))
+        if candy_cane:
+            offset = triangle_offset + (2 * i + 1) * circle_subdivisions
+            offset_next = triangle_offset + (2 * (i + 1) + 1) * circle_subdivisions
+            for j in range(0, circle_subdivisions, 2):
+                k0 = offset + j
+                k1 = offset + (j + 1) % circle_subdivisions
+                k2 = offset_next + j
+                k3 = offset_next + (j + 1) % circle_subdivisions
+                triangles.append((k0, k2, k1))
+                triangles.append((k1, k2, k3))
+
+            offset = triangle_offset + (2 * i + 2) * circle_subdivisions
+            offset_next = triangle_offset + (2 * (i + 1) + 2) * circle_subdivisions
+            for j in range(1, circle_subdivisions, 2):
+                k0 = offset + j
+                k1 = offset + (j + 1) % circle_subdivisions
+                k2 = offset_next + j
+                k3 = offset_next + (j + 1) % circle_subdivisions
+                triangles.append((k0, k2, k1))
+                triangles.append((k1, k2, k3))
+        else:
+            offset = triangle_offset + (i + 1) * circle_subdivisions
+            offset_next = triangle_offset + (i + 2) * circle_subdivisions
+            for j in range(circle_subdivisions):
+                k0 = offset + j
+                k1 = offset + (j + 1) % circle_subdivisions
+                k2 = offset_next + j
+                k3 = offset_next + (j + 1) % circle_subdivisions
+                triangles.append((k0, k2, k1))
+                triangles.append((k1, k2, k3))
 
     # end cap triangles
 
@@ -225,6 +290,7 @@ class StrandModel(CarbVisModel):
                 vcolors,
                 chain,
                 radius=radius,
+                candy_cane=False,
             )
 
         va = np.array(vertices, dtype=np.float32).reshape(-1, 3)

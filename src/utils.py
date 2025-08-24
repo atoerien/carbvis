@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generator,
+    Iterable,
+    ParamSpec,
+    TypeVar,
+)
 
 import numpy as np
 from numpy.typing import NDArray
@@ -50,6 +57,35 @@ def rotate(v: FloatArray, axis: FloatArray, angle: float):
     sin_a = np.sin(angle)
     cos_a = np.cos(angle)
     return cos_a * v + (1 - cos_a) * np.dot(axis, v) * axis + sin_a * np.cross(axis, v)
+
+
+def xyz_to_spherical(xyz: FloatArray, axis=-1) -> FloatArray:
+    x, y, z = np.moveaxis(xyz, axis, 0)
+
+    lea = np.empty_like(xyz)
+
+    pre_selector = ((slice(None),) * lea.ndim)[:axis]
+
+    xy_sq = x**2 + y**2
+    lea[(*pre_selector, 0)] = np.sqrt(xy_sq + z**2)
+    lea[(*pre_selector, 1)] = np.arctan2(np.sqrt(xy_sq), z)
+    lea[(*pre_selector, 2)] = np.arctan2(y, x)
+
+    return lea
+
+
+def spherical_to_xyz(lea: FloatArray, axis=-1) -> FloatArray:
+    l, e, a = np.moveaxis(lea, axis, 0)
+
+    xyz = np.empty_like(lea)
+
+    pre_selector = ((slice(None),) * xyz.ndim)[:axis]
+
+    xyz[(*pre_selector, 0)] = l * np.sin(e) * np.cos(a)
+    xyz[(*pre_selector, 1)] = l * np.sin(e) * np.sin(a)
+    xyz[(*pre_selector, 2)] = l * np.cos(e)
+
+    return xyz
 
 
 def dfs_paths(
