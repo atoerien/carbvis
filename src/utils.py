@@ -52,6 +52,31 @@ def rotate(v: FloatArray, axis: FloatArray, angle: float):
     return cos_a * v + (1 - cos_a) * np.dot(axis, v) * axis + sin_a * np.cross(axis, v)
 
 
+def dfs_paths(
+    get_neighbors: Callable[[T], Iterable[T]],
+    node: T,
+    visited: set[int] | None = None,
+    path: list[T] | None = None,
+) -> Generator[list[T]]:
+    if path is None:
+        path = [node]
+    if visited is None:
+        visited = {id(node)}
+
+    extended = False
+    for neighbor in get_neighbors(node):
+        id_neighbor = id(neighbor)
+        if id_neighbor not in visited:
+            path.append(neighbor)
+            visited.add(id_neighbor)
+            yield from dfs_paths(get_neighbors, neighbor, visited, path)
+            visited.remove(id_neighbor)
+            path.pop()
+            extended = True
+    if not extended:  # hit an endpoint, return the path
+        yield path.copy()
+
+
 def color_float_to_ubyte(arr: FloatArray) -> UByteArray:
     """
     Convert float colors in [0, 1] to uint8 in [0, 255].

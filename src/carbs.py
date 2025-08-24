@@ -5,7 +5,7 @@ import numpy as np
 from chimerax.atomic import Atom, Atoms, Element, Structure
 from chimerax.geometry import dihedral
 
-from .utils import FloatArray, Frame
+from .utils import FloatArray, Frame, dfs_paths
 
 
 @dataclass
@@ -264,94 +264,62 @@ def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
             else:
                 atom_to_ring[atom] = start_ring
 
+    def get_neighbors(atom: Atom):
+        if atom is start_atom:
+            # for the first atom, only allow edges out of the ring
+            ret = [a for a in atom.neighbors if a not in atom_to_ring]
+        elif atom in atom_to_ring:
+            # otherwise if we're in a ring it's an endpoint
+            ret = []
+        else:
+            ret = [a for a in atom.neighbors]
+        return ret
+
     linkages: list[CarbLinkage] = []
 
-    used_atoms: set[Atom] = set()
+    # keep the same visited set through all the dfs_paths calls
+    # start_atom then stays in the set, preventing duplicate
+    # forward and reverse paths
+    visited: set[int] = set()
 
-    for ring in rings:
-        if not ring.orientated:
+    for start_ring in rings:
+        if not start_ring.orientated:
             continue
-        for atom in ring:
-            if atom in multi_ring_atoms:
-                continue
-            find_linkages_from_atom(
-                linkages,
-                ring,
-                atom,
-                atom_to_ring,
-                multi_ring_atoms,
-                used_atoms,
-            )
 
-    # print(f"LINKAGES: {len(linkages.paths)}")
+        for start_atom in start_ring:
+            if start_atom in multi_ring_atoms:
+                continue
+
+            id_start_atom = id(start_atom)
+            if id_start_atom in visited:
+                continue
+            visited.add(id_start_atom)
+
+            for linkage in dfs_paths(get_neighbors, start_atom, visited):
+                end_atom = linkage[-1]
+                if start_atom is end_atom:
+                    continue
+
+                if end_atom in multi_ring_atoms:
+                    continue
+
+                if end_atom not in atom_to_ring:
+                    continue
+                end_ring = atom_to_ring[end_atom]
+
+                # enforce ordering, start_ring should be the C1 carbon
+                if end_atom.name in ("C1", "C1'", "C_1"):
+                    linkage.reverse()
+                    linkages.append(CarbLinkage(linkage, end_ring, start_ring))
+                else:
+                    if start_atom.name not in ("C1", "C1'", "C_1"):
+                        print(
+                            f"warning: linkage {start_atom}->{end_atom} is not a (C1->Cx) linkage"
+                        )
+                    linkages.append(CarbLinkage(linkage, start_ring, end_ring))
+
+    # print(f"LINKAGES: {len(linkages)}")
     return linkages
-
-
-def find_linkages_from_atom(
-    linkages: list[CarbLinkage],
-    start_ring: CarbRing,
-    start_atom: Atom,
-    atom_to_ring: dict[Atom, CarbRing],
-    multi_ring_atoms: set[Atom],
-    used_atoms: set[Atom],
-):
-    atom_stack: list[Atom] = [start_atom]
-    bond_pos_stack: list[int] = [0]
-
-    while atom_stack:
-        cur_atom = atom_stack.pop()
-        cur_atom_neighbors: list[Atom] = cur_atom.neighbors
-        next_bond_pos = bond_pos_stack.pop()
-
-        if next_bond_pos == 0:
-            used_atoms.add(cur_atom)
-
-        for i in range(next_bond_pos, len(cur_atom_neighbors)):
-            next_atom = cur_atom_neighbors[i]
-
-            # check that this isn't an atom that belongs to multiple rings
-            if next_atom in multi_ring_atoms:
-                continue
-
-            # check that this is not an edge immediately back to the previous atom
-            # (when there is only one atom in the path, it can't be a link back)
-            if atom_stack and next_atom == atom_stack[-1]:
-                continue
-
-            if next_atom in atom_to_ring:
-                end_ring = atom_to_ring[next_atom]
-
-                # check that we haven't arrived at a non-orientated ring
-                if not end_ring.orientated:
-                    continue
-
-                # only store paths from smaller ringidx to larger ringidx (to avoid getting a copy of each orientation of the path)
-                # ignore paths which return to the same ring
-                # check that we're leaving the starting ring
-                if id(end_ring) <= id(start_ring):
-                    continue
-
-                atoms = atom_stack.copy()
-                atoms.append(cur_atom)
-                atoms.append(next_atom)
-                linkages.append(CarbLinkage(atoms, start_ring, end_ring))
-                continue
-            else:
-                # check that this is not an atom we've included
-                # (an exception is the first atom, which we're allowed to try add, obviously :)
-                if next_atom in used_atoms:
-                    continue
-
-                # push current state and new state onto stack and recurse
-                atom_stack.append(cur_atom)
-                bond_pos_stack.append(i + 1)
-                atom_stack.append(next_atom)
-                bond_pos_stack.append(0)
-                break
-        else:
-            if atom_stack:
-                # clean up before returning from recurse
-                used_atoms.remove(cur_atom)
 
 
 def paperchain_colormap(pucker: float) -> FloatArray:
