@@ -6,84 +6,9 @@ from chimerax.atomic.changes import Changes
 from chimerax.core.session import Session
 from chimerax.graphics import Texture
 
-from .carbs import CarbRing, find_rings
+from .carbs import find_rings, paperchain_colormap
 from .model import CarbVisModel
 from .utils import FloatArray, Frame, color_float_to_ubyte, time
-
-
-def cremer_pople_ring_pucker(ring: CarbRing) -> float:
-    displ = atom_displ_from_mean_plane(ring.coords)
-
-    q = np.sqrt(np.sum(displ**2))
-    return min(q, 2.0)  # truncate amplitude at 2
-
-
-def atom_displ_from_mean_plane(coords: FloatArray) -> FloatArray:
-    n = coords.shape[0]
-
-    # calculate centre of geometry
-    cog = np.mean(coords, axis=0)
-
-    # centre the ring
-    centered = coords - cog
-
-    # Calculate cartesian axes based on coords of nuclei in ring
-    # using cremer-pople algorithm. It is assumed that the
-    # centre of geometry is the centre of the ring.
-
-    indices = np.arange(n)
-    ze_angle = 2.0 * np.pi * (indices - 1) / n
-    ze_sin = np.sin(ze_angle)
-    ze_cos = np.cos(ze_angle)
-
-    Rp = np.sum(centered.T * ze_sin, axis=1)
-    Rpp = np.sum(centered.T * ze_cos, axis=1)
-
-    z = np.cross(Rp, Rpp)
-    z /= np.linalg.norm(z)
-
-    # lmbda = np.dot(z, Rp)
-    # y = Rp - z * lmbda
-    # y /= np.linalg.norm(y)
-
-    # x = np.cross(y, z)
-
-    # calculate displacement from mean plane
-    return np.dot(centered, z)
-
-
-def colormap(pucker_sum: float) -> FloatArray:
-    rgb = np.zeros(3, dtype=np.float32)  # default color is black
-
-    # Hot to cold color map:
-    # Red -> Yellow -> Green -> Cyan -> Blue -> Magenta
-    if pucker_sum < 0.40:
-        # Red (1,0,0) -> Yellow (1,1,0)
-        rgb[0] = 1.0  # red
-        rgb[1] = pucker_sum * 2.5  # increase green -> yellow
-        rgb[2] = 0.0
-    elif pucker_sum < 0.56:
-        # Yellow (1,1,0) -> Green (0,1,0)
-        rgb[0] = 1.0 - (pucker_sum - 0.40) * 6.25  # decrease red -> green
-        rgb[1] = 1.0
-        rgb[2] = 0.0
-    elif pucker_sum < 0.64:
-        # Green (0,1,0) -> Cyan (0,1,1)
-        rgb[0] = 0.0
-        rgb[1] = 1.0  # green
-        rgb[2] = (pucker_sum - 0.56) * 12.5  # increase blue
-    elif pucker_sum < 0.76:
-        # Cyan (0,1,1) -> Blue (0,0,1)
-        rgb[0] = 0.0
-        rgb[1] = 1.0 - (pucker_sum - 0.64) * 5.0  # decrease green
-        rgb[2] = 1.0
-    else:
-        # Blue (0,0,1) -> Magenta (1,0,1)
-        rgb[0] = (pucker_sum - 0.76) * 0.8  # increase red
-        rgb[1] = 0.0
-        rgb[2] = 1.0
-
-    return rgb
 
 
 def make_texture(
@@ -216,8 +141,8 @@ class PaperChainModel(CarbVisModel):
         for ring in rings:
             n = len(ring.atoms)  # the number of atoms in the current ring
 
-            pucker_sum = cremer_pople_ring_pucker(ring)
-            color = colormap(pucker_sum)
+            pucker = ring.calc_pucker_amplitude()
+            color = paperchain_colormap(pucker)
 
             ring_coords = ring.coords
             frame = ring.get_frame()

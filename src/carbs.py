@@ -3,6 +3,7 @@ from typing import Iterator
 
 import numpy as np
 from chimerax.atomic import Atom, Atoms, Element, Structure
+from chimerax.geometry import dihedral
 
 from .utils import FloatArray, Frame
 
@@ -123,6 +124,42 @@ class CarbRing:
 
         return Frame(centroid, forward, right, up)
 
+    def calc_pucker_amplitude(self):
+        """
+        Calculate the Cremer-Pople puckering amplitude for this ring.
+        """
+
+        # get centred ring coords
+        coords = self.coords - self.get_centroid()
+        n = coords.shape[0]
+
+        # Calculate cartesian axes based on coords of nuclei in ring
+        # using cremer-pople algorithm. It is assumed that the
+        # centre of geometry is the centre of the ring.
+
+        indices = np.arange(n)
+        ze_angle = 2.0 * np.pi * (indices - 1) / n
+        ze_sin = np.sin(ze_angle)
+        ze_cos = np.cos(ze_angle)
+
+        Rp = np.sum(coords.T * ze_sin, axis=1)
+        Rpp = np.sum(coords.T * ze_cos, axis=1)
+
+        z = np.cross(Rp, Rpp)
+        z /= np.linalg.norm(z)
+
+        # lmbda = np.dot(z, Rp)
+        # y = Rp - z * lmbda
+        # y /= np.linalg.norm(y)
+
+        # x = np.cross(y, z)
+
+        # calculate displacement from mean plane
+        displ = np.dot(coords, z)
+
+        q = np.sqrt(np.sum(displ**2))
+        return min(q, 2.0)  # truncate amplitude at 2
+
 
 @dataclass
 class CarbLinkage:
@@ -134,6 +171,53 @@ class CarbLinkage:
     atoms: list[Atom]
     start_ring: CarbRing
     end_ring: CarbRing
+
+    def calc_angles(self) -> FloatArray:
+        n = len(self.atoms)
+
+        if n < 2:
+            return np.zeros(0, dtype=np.float32)
+
+        atoms = self.atoms
+        start_ring = self.start_ring
+        end_ring = self.end_ring
+
+        angle_atoms = []
+
+        # add side-atom before first atom
+        found = False
+        first_atom = atoms[0]
+        for a in first_atom.neighbors:
+            if a != atoms[1] and a not in start_ring.atoms:
+                if found:
+                    print(f"warning: multiple non-ring atoms attached to {first_atom}")
+                else:
+                    angle_atoms.append(a)
+                    found = True
+        if not found:
+            # print(f"no non-ring atom attached to {first_atom}")
+            return np.zeros(0, dtype=np.float32)
+
+        angle_atoms.extend(atoms)
+
+        # add side-atom after last atom
+        found = False
+        last_atom = atoms[-1]
+        for a in last_atom.neighbors:
+            if a != atoms[-2] and a not in end_ring.atoms:
+                if found:
+                    print(f"warning: multiple non-ring atoms attached to {last_atom}")
+                else:
+                    angle_atoms.append(a)
+                    found = True
+        if not found:
+            # print(f"no non-ring atom attached to {first_atom}")
+            return np.zeros(0, dtype=np.float32)
+
+        angles = np.empty(n - 1, dtype=np.float32)
+        for i in range(n - 1):
+            angles[i] = dihedral(*(a.coord for a in angle_atoms[i : i + 4]))
+        return angles
 
 
 @dataclass
@@ -268,3 +352,52 @@ def find_linkages_from_atom(
             if atom_stack:
                 # clean up before returning from recurse
                 used_atoms.remove(cur_atom)
+
+
+def paperchain_colormap(pucker: float) -> FloatArray:
+    rgb = np.zeros(3, dtype=np.float32)  # default color is black
+
+    # Hot to cold color map:
+    # Red -> Yellow -> Green -> Cyan -> Blue -> Magenta
+    if pucker < 0.40:
+        # Red (1,0,0) -> Yellow (1,1,0)
+        rgb[0] = 1.0  # red
+        rgb[1] = pucker * 2.5  # increase green -> yellow
+        rgb[2] = 0.0
+    elif pucker < 0.56:
+        # Yellow (1,1,0) -> Green (0,1,0)
+        rgb[0] = 1.0 - (pucker - 0.40) * 6.25  # decrease red -> green
+        rgb[1] = 1.0
+        rgb[2] = 0.0
+    elif pucker < 0.64:
+        # Green (0,1,0) -> Cyan (0,1,1)
+        rgb[0] = 0.0
+        rgb[1] = 1.0  # green
+        rgb[2] = (pucker - 0.56) * 12.5  # increase blue
+    elif pucker < 0.76:
+        # Cyan (0,1,1) -> Blue (0,0,1)
+        rgb[0] = 0.0
+        rgb[1] = 1.0 - (pucker - 0.64) * 5.0  # decrease green
+        rgb[2] = 1.0
+    else:
+        # Blue (0,0,1) -> Magenta (1,0,1)
+        rgb[0] = (pucker - 0.76) * 0.8  # increase red
+        rgb[1] = 0.0
+        rgb[2] = 1.0
+
+    return rgb
+
+
+def dihedral_norm_colormap(angles: FloatArray) -> FloatArray:
+    if angles.shape[0] < 2:
+        return np.zeros(3, dtype=np.float32)
+
+    v = np.linalg.norm(angles)
+    rgb = np.empty(3, dtype=np.float32)
+
+    v /= 180
+    rgb[0] = 1
+    rgb[1] = 1 - v
+    rgb[2] = 1 - v
+
+    return rgb

@@ -7,7 +7,7 @@ from chimerax.atomic import Structure
 from chimerax.atomic.changes import Changes
 from chimerax.core.session import Session
 
-from .carbs import find_linkages, find_rings
+from .carbs import dihedral_norm_colormap, find_linkages, find_rings
 from .model import CarbVisModel
 from .utils import FloatArray, Frame, color_float_to_ubyte, rotate, time
 
@@ -291,6 +291,7 @@ class TwisterModel(CarbVisModel):
         maxringsize = 10
         rib_width = 0.3
         rib_height = 0.05
+        color_bydihedral = True
 
         rings = find_rings(self.structure, maxringsize)
         linkages = find_linkages(rings)
@@ -421,8 +422,14 @@ class TwisterModel(CarbVisModel):
             inc_angle = correction_angle / rib_steps
             curr_angle = -inc_angle
 
-            top_color = np.array([0.5, 0.5, 1.0], dtype=np.float32)
-            bottom_color = np.array([0.9, 0.9, 0.9], dtype=np.float32)
+            if color_bydihedral:
+                angles = link.calc_angles()
+                color = dihedral_norm_colormap(angles)
+                top_color = color
+                bottom_color = color
+            else:
+                top_color = np.array([0.5, 0.5, 1.0], dtype=np.float32)
+                bottom_color = np.array([0.9, 0.9, 0.9], dtype=np.float32)
 
             triangle_offset = len(vertices)
 
