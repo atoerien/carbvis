@@ -9,6 +9,7 @@ from chimerax.core.session import Session
 from .coloring import color_bonds_bydihedral
 from .model import CarbVisModel
 from .paperchain import PaperChainModel
+from .strand import StrandModel
 from .twister import TwisterModel
 
 P = ParamSpec("P")
@@ -123,6 +124,51 @@ def twister(
             model = find_model(TwisterModel, structure, session)
         if model is None:
             model = TwisterModel(session, structure, update=update)
+            new = True
+        else:
+            # TODO: update
+            new = False
+
+        model.calculate_graphics()
+
+        if new:
+            # Add new models to open models list.
+            session.models.add([model], parent=model.structure)
+
+        # Make sure replaced surfaces are displayed.
+        model.display = True
+
+        models.append(model)
+
+    return models
+
+
+@cmd(
+    optional=[("structures", StructuresArg)],
+    keyword=[("replace", BoolArg), ("update", BoolArg)],
+)
+def strand(
+    session: Session,
+    structures: Structures | None = None,
+    replace=True,
+    update=True,
+):
+    """Strand description"""
+
+    structures = check_structures(structures, session)
+
+    models: list[StrandModel] = []
+
+    for structure in structures:
+        structure: Structure
+
+        model = None
+
+        new = True
+        if replace:
+            model = find_model(StrandModel, structure, session)
+        if model is None:
+            model = StrandModel(session, structure, update=update)
             new = True
         else:
             # TODO: update
