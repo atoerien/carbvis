@@ -49,7 +49,9 @@ def make_texture(
     if formula == "stripes":
         mask = (y % period) < (period * duty)
     elif formula == "grid":
-        mask = ((x % period) < (period * duty)) | ((y % period) < (period * duty))
+        mask_x = (x % period) < (0.5 * period * duty)
+        mask_y = (y % period) < (0.5 * period * duty)
+        mask = mask_x | mask_y
     elif formula == "diamond":
         d = np.abs(x - cx) + np.abs(y - cy)
         mask = (d % period) < (period * duty)
