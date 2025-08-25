@@ -42,6 +42,7 @@ class CarbVisModel(Model):
         va = na = np.empty((0, 3), np.float32)
         ta = np.empty((0, 3), np.int32)
         self.set_geometry(va, na, ta)
+        self.texture_coordinates = None
 
     @property
     def auto_update(self):

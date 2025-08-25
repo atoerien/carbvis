@@ -8,7 +8,7 @@ from chimerax.graphics import Texture
 
 from .carbs import find_rings, paperchain_colormap
 from .model import CarbVisModel
-from .utils import FloatArray, Frame, color_float_to_ubyte, time
+from .utils import FloatArray, Frame, UByteArray, color_float_to_ubyte, time
 
 
 def make_texture(
@@ -18,7 +18,7 @@ def make_texture(
     duty=0.5,
     on_color=255,
     off_color=0,
-):
+) -> UByteArray:
     """
     Generate a procedural texture pattern.
 
@@ -110,8 +110,9 @@ class PaperChainModel(CarbVisModel):
         self.bipyramid_height = bipyramid_height
         self.max_ring_size = max_ring_size
 
-        self.tex_formula = None
-        self._update_texture(tex_formula)
+        self.texture: Texture = Texture(linear_interpolation=True)
+        self.tex_formula = tex_formula
+        self._update_texture()
 
     def update_params(
         self,
@@ -132,32 +133,29 @@ class PaperChainModel(CarbVisModel):
             self.max_ring_size = max_ring_size
             clear_geometry = True
 
-        self._update_texture(tex_formula)
+        # TODO: make more texture params configurable
+        update_texture = False
+        if tex_formula != self.tex_formula:
+            self.tex_formula = tex_formula
+            update_texture = True
 
         if clear_geometry:
             self._clear_geometry()
+        if update_texture:
+            self._update_texture()
 
-    def _update_texture(self, formula: str | None):
-        # TODO: make more texture params configurable
-
-        update = False
-        if formula != self.tex_formula:
-            self.tex_formula = formula
-            update = True
-
-        if update:
-            if self.texture is not None:
-                self.texture.delete_texture()
-                self.texture = None
-            if formula is not None:
-                tex = make_texture(
-                    formula=formula,
-                    period=128,
-                    duty=0.5,
-                    on_color=255,
-                    off_color=128,
-                )
-                self.texture = Texture(tex)
+    def _update_texture(self):
+        if self.tex_formula is not None:
+            tex = make_texture(
+                formula=self.tex_formula,
+                period=128,
+                duty=0.5,
+                on_color=255,
+                off_color=128,
+            )
+        else:
+            tex = np.full((16, 16, 3), 255, dtype=np.uint8)
+        self.texture.reload_texture(tex)
 
     def _do_auto_update(self, changes: Changes):
         super()._do_auto_update(changes)
@@ -169,7 +167,6 @@ class PaperChainModel(CarbVisModel):
     @time
     def _calc_graphics(self):
         bipyramid_height = self.bipyramid_height
-        have_texture = self.texture is not None
 
         # NOTE: should point to a white part of the texture
         # TODO: make this better
@@ -191,6 +188,7 @@ class PaperChainModel(CarbVisModel):
 
             ring_coords = ring.coords
             frame = ring.get_frame()
+            tex = ring_tex(ring_coords, frame)
 
             x = 0.5 * bipyramid_height * frame.up
             top = frame.origin + x
@@ -201,18 +199,12 @@ class PaperChainModel(CarbVisModel):
             vertices.append(top)
             normals.append(frame.up)
             vcolors.append(color)
+            texcoords.append(TOP_TEXTURE_COORD)
 
             vertices.append(bottom)
             normals.append(-frame.up)
             vcolors.append(color)
-
-            if have_texture:
-                tex = ring_tex(ring_coords, frame)
-
-                texcoords.append(TOP_TEXTURE_COORD)
-                texcoords.append((0.5, 0.5))
-            else:
-                tex = None
+            texcoords.append((0.5, 0.5))
 
             for i in range(n):
                 # calculate next ring position (wrapping as necessary)
@@ -234,8 +226,7 @@ class PaperChainModel(CarbVisModel):
                 vertices.append(curvec)
                 normals.append(normtop)
                 vcolors.append(color)
-                if have_texture:
-                    texcoords.append(TOP_TEXTURE_COORD)
+                texcoords.append(TOP_TEXTURE_COORD)
 
                 triangles.append(
                     (
@@ -248,9 +239,7 @@ class PaperChainModel(CarbVisModel):
                 vertices.append(curvec)
                 normals.append(normbot)
                 vcolors.append(color)
-                if have_texture:
-                    assert tex is not None
-                    texcoords.append(tex[i])
+                texcoords.append(tex[i])
 
                 # order different to keep anticlockwise winding
                 triangles.append(
