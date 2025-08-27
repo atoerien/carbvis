@@ -308,9 +308,15 @@ def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
                 end_ring = atom_to_ring[end_atom]
 
                 # enforce ordering, start_ring should be the C1 carbon
-                if start_atom.name in ("C1", "C1'", "C_1", "C2", "C2'", "C_2"):
+                # also if no C1 involved at all, start_ring can be the C2 carbon
+                if start_atom.name in ("C1", "C1'", "C_1"):
                     linkages.append(CarbLinkage(linkage, start_ring, end_ring))
-                elif end_atom.name in ("C1", "C1'", "C_1", "C2", "C2'", "C_2"):
+                elif end_atom.name in ("C1", "C1'", "C_1"):
+                    linkage.reverse()
+                    linkages.append(CarbLinkage(linkage, end_ring, start_ring))
+                elif start_atom.name in ("C2", "C2'", "C_2"):
+                    linkages.append(CarbLinkage(linkage, start_ring, end_ring))
+                elif end_atom.name in ("C2", "C2'", "C_2"):
                     linkage.reverse()
                     linkages.append(CarbLinkage(linkage, end_ring, start_ring))
                 else:
