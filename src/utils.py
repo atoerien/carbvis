@@ -50,6 +50,35 @@ def time(fn: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
+def spline(
+    a: FloatArray,
+    b: FloatArray,
+    c: FloatArray,
+    d: FloatArray,
+    t: float | FloatArray,
+) -> tuple[FloatArray, FloatArray]:
+    """
+    Calculates the position at point(s) t along the spline
+    with co-efficients A, B, C and D.
+    spline(t) = ((A * t + B) * t + C) * t + D
+    """
+    t = np.asarray(t).reshape(-1, 1)
+
+    shape = np.broadcast(t, d).shape
+
+    path = np.copy(np.broadcast_to(d, shape))
+    path += t * c
+    path += t**2 * b
+    path += t**3 * a
+
+    tan = np.copy(np.broadcast_to(c, shape))
+    tan += 2 * t * b
+    tan += 3 * t**2 * a
+    tan /= np.linalg.norm(tan, axis=1).reshape(-1, 1)
+
+    return path, tan
+
+
 def rotate(v: FloatArray, axis: FloatArray, angle: float):
     """Rotate v about axis by angle using Rodrigues' formula."""
 

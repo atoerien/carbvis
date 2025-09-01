@@ -9,31 +9,11 @@ from chimerax.core.session import Session
 
 from .carbs import CarbLinkage, find_linkages, find_rings
 from .model import CarbVisModel
-from .utils import FloatArray, Frame, color_float_to_ubyte, rotate, time
+from .utils import FloatArray, Frame, color_float_to_ubyte, rotate, spline, time
 
 # stop complaining when assigning float32 to float
 if TYPE_CHECKING:
     float = float | np.floating
-
-
-def ribbon_spline(
-    a: FloatArray,
-    b: FloatArray,
-    c: FloatArray,
-    d: FloatArray,
-    t: float,
-) -> FloatArray:
-    """
-    Calculates the position at point t along the spline with co-efficients
-    A, B, C and D.
-    spline(t) = ((A * t + B) * t + C) * t + D
-    """
-
-    ret = np.copy(d)
-    ret += t * c
-    ret += t**2 * b
-    ret += t**3 * a
-    return ret
 
 
 def twister_draw_ribbon_extensions(
@@ -398,7 +378,6 @@ class TwisterModel(CarbVisModel):
 
             rib_delta = start_rib - end_rib
             rib_interval = np.linalg.norm(rib_delta)
-            rib_inc = rib_interval / rib_steps
 
             ftmp1 = 1.0 / rib_interval
 
@@ -417,47 +396,49 @@ class TwisterModel(CarbVisModel):
             spline_c = start_tangent
             spline_d = start_rib
 
-            # Create ribbon tangent spline
-            tangent_a = np.zeros(3, dtype=np.float32)
-            tangent_b = 3 * spline_a
-            tangent_c = 2 * spline_b
-            tangent_d = spline_c
+            t = np.linspace(0, rib_interval, rib_steps + 1)
+            spath, stan = spline(spline_a, spline_b, spline_c, spline_d, t)
 
             frames: list[Frame] = []
 
             # Initial frame
-            f_right = np.cross(start_tangent, start_normal)
-            f_right /= np.linalg.norm(f_right)
-            start_frame = Frame(
-                start_rib,
-                start_tangent,
-                f_right,
-                np.cross(f_right, start_tangent),
-            )
+            point = spath[0]
+            tangent = stan[0]
+            up = start_normal
+            up = up - np.dot(up, tangent) * tangent
+            if np.allclose(up, 0.0):
+                # fallback: pick a world axis
+                if abs(tangent[0]) < 0.9:
+                    up = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+                else:
+                    up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+                up = up - np.dot(up, tangent) * tangent
+            up /= np.linalg.norm(up)
+
+            # tangent and forward are length 1, no need to norm
+            right = np.cross(tangent, up)
+
+            start_frame = Frame(point, tangent, right, up)
             frames.append(start_frame)
 
-            t = rib_inc
-            for _ in range(rib_steps):
+            for i in range(1, len(spath)):
                 prev_frame = frames[-1]
+                point = spath[i]
+                tangent = stan[i]
 
-                new_tangent = ribbon_spline(
-                    tangent_a, tangent_b, tangent_c, tangent_d, t
-                )
-                new_tangent /= np.linalg.norm(new_tangent)
-
-                rot_axis = np.cross(prev_frame.forward, new_tangent)
+                rot_axis = np.cross(prev_frame.forward, tangent)
                 axis_norm = np.linalg.norm(rot_axis)
 
                 # copy previous frame
                 frame = prev_frame.copy()
-                frame.origin = ribbon_spline(spline_a, spline_b, spline_c, spline_d, t)
+                frame.origin = point
                 frame.arclength += np.linalg.norm(frame.origin - prev_frame.origin)
 
                 # rotate frame if tangents not parallel
                 if axis_norm > min_axis_norm:
                     rot_angle = np.arccos(
                         # float shenanigans
-                        np.clip(np.dot(prev_frame.forward, new_tangent), -1.0, 1.0)
+                        np.clip(np.dot(prev_frame.forward, tangent), -1.0, 1.0)
                     )
 
                     # Rotate frame angle rot_angle about rot_axis
@@ -466,7 +447,6 @@ class TwisterModel(CarbVisModel):
                     frame.up = rotate(frame.up, rot_axis, rot_angle)
 
                 frames.append(frame)
-                t += rib_inc
 
             end_frame = frames[-1]
 
