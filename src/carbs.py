@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Iterator, Self
 
 import numpy as np
-from chimerax.atomic import Atom, Atoms, Element, Structure
+from chimerax.atomic import Atom, Atoms, Element, Residue, Residues, Ring, Structure
 from chimerax.geometry import dihedral
 
-from .utils import FloatArray, Frame, dfs_paths
+from .utils import FloatArray, Frame, dfs_paths, gaussian
 
 
 @dataclass
@@ -17,7 +17,24 @@ class CarbRing:
     """
 
     atoms: Atoms
+    residue: Residue
     orientated: bool = field(default=False)
+
+    @classmethod
+    def from_ring(cls, ring: Ring) -> Self:
+        atoms: Atoms = ring.ordered_atoms
+
+        residues: Residues = atoms.unique_residues
+        if len(residues) != 1:
+            raise ValueError("Ring crosses residue boundary")
+
+        ret = cls(atoms, residues[0])
+
+        ret.orientate()
+        # if not ret.orientate():
+        #     print(f"warning: could not orientate ring {ret}")
+
+        return ret
 
     def __getitem__(self, i: int) -> Atom:
         return self.atoms[i]  # pyright: ignore[reportReturnType]
@@ -231,25 +248,12 @@ class CarbChain:
     linkages: list[CarbLinkage]
 
 
-def find_rings(
-    structure: Structure,
-    max_size: int,
-    orientate: bool = True,
-) -> list[CarbRing]:
-    rings = structure.rings(all_size_threshold=max_size)
-    rings = [CarbRing(ring.ordered_atoms) for ring in rings]
-
+def find_rings(structure: Structure, max_size: int) -> list[CarbRing]:
+    rings = [
+        CarbRing.from_ring(ring)
+        for ring in structure.rings(cross_residue=False, all_size_threshold=max_size)
+    ]
     # print(f"RINGS: {len(rings)}")
-    # for ring in rings:
-    #     print(f"  RING: {ring}")
-
-    if orientate:
-        n_orientated_rings = 0
-        for ring in rings:
-            if ring.orientate():
-                n_orientated_rings += 1
-        # print(f"ORIENTATED RINGS: {n_orientated_rings}")
-
     return rings
 
 
@@ -416,16 +420,76 @@ def paperchain_colormap(pucker: float) -> FloatArray:
     return rgb
 
 
-def dihedral_norm_colormap(angles: FloatArray) -> FloatArray:
-    if angles.shape[0] < 2:
+def dihedral_norm_colormap(linkage: CarbLinkage) -> FloatArray:
+    angles = linkage.calc_angles()
+    n = angles.shape[0]
+    if n == 0:
         return np.zeros(3, dtype=np.float32)
 
     v = np.linalg.norm(angles)
     rgb = np.empty(3, dtype=np.float32)
 
-    v /= 180
+    v /= np.sqrt(n) * 180
     rgb[0] = 1
-    rgb[1] = 1 - v
-    rgb[2] = 1 - v
+    rgb[1] = 0.7 * (1 - v)
+    rgb[2] = 0.7 * (1 - v)
+
+    return rgb
+
+
+def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
+    angles = linkage.calc_angles()
+
+    n = angles.shape[0]
+    if n < 2 or n > 3:
+        print(f"warning: linkage {linkage} has {n} angles")
+        return np.zeros(3, dtype=np.float32)
+
+    link_type = linkage.start_ring.residue.name[:1].lower()
+    if link_type not in ("a", "b"):
+        print(f"warning: linkage {linkage} has an unknown type {link_type!r}")
+        return np.zeros(3, dtype=np.float32)
+
+    if n == 2:
+        phi, psi = angles
+
+        if link_type == "a":
+            nx = gaussian(phi, 1, -40, 40, 2)
+        else:
+            nx = gaussian(phi, 1, 40, 40, 2)
+        ny = gaussian(psi, 1, 0, 60, 2)
+        v = 1 - nx * ny
+    else:
+        phi, psi, omega = angles
+
+        if link_type == "a":
+            nx = gaussian(phi, 1, -40, 40, 2)
+        else:
+            nx = gaussian(phi, 1, 40, 40, 2)
+
+        ny = 1 - (
+            (1 - gaussian(psi, 1, 60, 40, 2))
+            * (1 - gaussian(psi, 1, -60, 40, 2))
+            * (1 - gaussian(abs(psi), 1, 180, 40, 2))
+        )
+        nz = 1 - (
+            (1 - gaussian(omega, 1, 60, 40, 2))
+            * (1 - gaussian(omega, 1, -60, 40, 2))
+            * (1 - gaussian(abs(omega), 1, 180, 40, 2))
+        )
+        v = 1 - nx * ny * nz
+
+    # if v > 0.1:
+    #     print(
+    #         f"{linkage.atoms[0]}->{linkage.atoms[-1]}:\n"
+    #         f"type={link_type} angles={angles}"
+    #     )
+    #     print(f"v={v}\n")
+
+    rgb = np.empty(3, dtype=np.float32)
+
+    rgb[0] = 1
+    rgb[1] = 0.7 * (1 - v)
+    rgb[2] = 0.7 * (1 - v)
 
     return rgb

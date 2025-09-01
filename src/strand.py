@@ -1,18 +1,14 @@
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 from chimerax.atomic import Structure
 from chimerax.atomic.changes import Changes
 from chimerax.core.session import Session
 from chimerax.geometry import natural_cubic_spline
 
-from .carbs import (
-    CarbChain,
-    dihedral_norm_colormap,
-    find_chains,
-    find_linkages,
-    find_rings,
-)
+from .carbs import CarbChain, CarbLinkage, find_chains, find_linkages, find_rings
 from .model import CarbVisModel
 from .utils import FloatArray, Frame, color_float_to_ubyte, rotate, time
 
@@ -23,6 +19,7 @@ def draw_tube(
     triangles: list[tuple[int, int, int]],
     vcolors: list[FloatArray],
     chain: CarbChain,
+    colormap: Callable[[CarbLinkage], FloatArray],
     radius: float = 1.0,
     segment_subdivisions: int = 20,
     circle_subdivisions: int = 16,
@@ -41,8 +38,7 @@ def draw_tube(
         start_centroid, start_normal = link.start_ring.get_centroid_and_normal()
         end_centroid, end_normal = link.end_ring.get_centroid_and_normal()
 
-        angles = link.calc_angles()
-        color = dihedral_norm_colormap(angles)
+        color = colormap(link)
 
         j = 3 * i
         points[j] = start_centroid
@@ -258,6 +254,7 @@ class StrandModel(CarbVisModel):
         update: bool,
         max_ring_size: int,
         radius: float,
+        colormap: Callable[[CarbLinkage], FloatArray],
     ):
         if name is None:
             name = f"{structure.name} Strand"
@@ -265,6 +262,7 @@ class StrandModel(CarbVisModel):
 
         self.max_ring_size = max_ring_size
         self.radius = radius
+        self.dihedral_colormap = colormap
 
     def update_params(
         self,
@@ -272,6 +270,7 @@ class StrandModel(CarbVisModel):
         update: bool,
         max_ring_size: int,
         radius: float,
+        colormap: Callable[[CarbLinkage], FloatArray],
     ):
         if update != self.auto_update:
             self.auto_update = update
@@ -282,6 +281,9 @@ class StrandModel(CarbVisModel):
             clear_geometry = True
         if radius != self.radius:
             self.radius = radius
+            clear_geometry = True
+        if colormap != self.dihedral_colormap:
+            self.dihedral_colormap = colormap
             clear_geometry = True
 
         if clear_geometry:
@@ -297,6 +299,7 @@ class StrandModel(CarbVisModel):
     @time
     def _calc_graphics(self):
         radius = self.radius
+        colormap = self.dihedral_colormap
 
         rings = find_rings(self.structure, self.max_ring_size)
         linkages = find_linkages(rings)
@@ -314,6 +317,7 @@ class StrandModel(CarbVisModel):
                 triangles,
                 vcolors,
                 chain,
+                colormap,
                 radius=radius,
                 candy_cane=False,
             )

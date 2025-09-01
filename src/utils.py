@@ -88,6 +88,10 @@ def spherical_to_xyz(lea: FloatArray, axis=-1) -> FloatArray:
     return xyz
 
 
+def gaussian(x, a, b, c, p=1):
+    return a * np.exp(-((((x - b) ** 2) / (2 * (c**2))) ** p))
+
+
 def dfs_paths(
     get_neighbors: Callable[[T], Iterable[T]],
     node: T,

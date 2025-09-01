@@ -1,12 +1,17 @@
 import itertools
+from typing import Callable
 
 from chimerax.atomic import Bond, Bonds, Structure
 
-from .carbs import dihedral_norm_colormap, find_linkages, find_rings
-from .utils import color_float_to_ubyte
+from .carbs import CarbLinkage, find_linkages, find_rings
+from .utils import FloatArray, color_float_to_ubyte
 
 
-def color_bonds_bydihedral(bonds: Bonds, max_ring_size: int):
+def color_bonds_bydihedral(
+    bonds: Bonds,
+    max_ring_size: int,
+    colormap: Callable[[CarbLinkage], FloatArray],
+):
     for structure, bonds in bonds.by_structure:
         structure: Structure
 
@@ -14,8 +19,7 @@ def color_bonds_bydihedral(bonds: Bonds, max_ring_size: int):
         linkages = find_linkages(rings)
 
         for link in linkages:
-            angles = link.calc_angles()
-            color = color_float_to_ubyte(dihedral_norm_colormap(angles))
+            color = color_float_to_ubyte(colormap(link))
 
             for atom in link.atoms[1:-1]:
                 atom.color = color

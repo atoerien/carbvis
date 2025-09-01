@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 from chimerax.atomic import Structure
 from chimerax.atomic.changes import Changes
 from chimerax.core.session import Session
 
-from .carbs import dihedral_norm_colormap, find_linkages, find_rings
+from .carbs import CarbLinkage, find_linkages, find_rings
 from .model import CarbVisModel
 from .utils import FloatArray, Frame, color_float_to_ubyte, rotate, time
 
@@ -277,7 +277,7 @@ class TwisterModel(CarbVisModel):
         max_ring_size: int,
         rib_width: float,
         rib_height: float,
-        color_bydihedral: bool,
+        colormap: Callable[[CarbLinkage], FloatArray] | None,
         gum_twist: bool,
     ):
         if name is None:
@@ -289,7 +289,7 @@ class TwisterModel(CarbVisModel):
         self.max_ring_size = max_ring_size
         self.rib_width = rib_width
         self.rib_height = rib_height
-        self.color_bydihedral = color_bydihedral
+        self.dihedral_colormap = colormap
         self.gum_twist = gum_twist
 
     def update_params(
@@ -301,7 +301,7 @@ class TwisterModel(CarbVisModel):
         max_ring_size: int,
         rib_width: float,
         rib_height: float,
-        color_bydihedral: bool,
+        colormap: Callable[[CarbLinkage], FloatArray] | None,
         gum_twist: bool,
     ):
         if update != self.auto_update:
@@ -323,8 +323,8 @@ class TwisterModel(CarbVisModel):
         if rib_height != self.rib_height:
             self.rib_height = rib_height
             clear_geometry = True
-        if color_bydihedral != self.color_bydihedral:
-            self.color_bydihedral = color_bydihedral
+        if colormap != self.dihedral_colormap:
+            self.dihedral_colormap = colormap
             clear_geometry = True
         if gum_twist != self.gum_twist:
             self.gum_twist = gum_twist
@@ -346,7 +346,7 @@ class TwisterModel(CarbVisModel):
         rib_steps = self.rib_steps
         rib_width = self.rib_width
         rib_height = self.rib_height
-        color_bydihedral = self.color_bydihedral
+        colormap = self.dihedral_colormap
         gum_twist = self.gum_twist
 
         rings = find_rings(self.structure, self.max_ring_size)
@@ -480,9 +480,8 @@ class TwisterModel(CarbVisModel):
             curr_angle = 0
             total_arclength = frames[-1].arclength
 
-            if color_bydihedral:
-                angles = link.calc_angles()
-                color = dihedral_norm_colormap(angles)
+            if colormap is not None:
+                color = colormap(link)
                 top_color = color
                 bottom_color = color
             else:

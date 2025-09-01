@@ -1,7 +1,7 @@
-from typing import Callable, Generic, ParamSpec, TypeVar, cast
+from typing import Callable, ParamSpec, Protocol, TypeVar, cast
 
 from chimerax.atomic import Bonds, Structure, Structures, all_bonds, all_structures
-from chimerax.atomic.args import BondsArg, StructuresArg
+from chimerax.atomic.args import AtomsArg, BondsArg, StructuresArg
 from chimerax.core.commands import (
     BoolArg,
     CmdDesc,
@@ -14,6 +14,7 @@ from chimerax.core.commands import (
 from chimerax.core.errors import UserError
 from chimerax.core.session import Session
 
+from .carbs import dihedral_colormap, dihedral_norm_colormap
 from .coloring import color_bonds_bydihedral
 from .model import CarbVisModel
 from .paperchain import PaperChainModel
@@ -21,10 +22,10 @@ from .strand import StrandModel
 from .twister import TwisterModel
 
 P = ParamSpec("P")
-R = TypeVar("R")
+R = TypeVar("R", covariant=True)
 
 
-class CmdFunc(Generic[P, R]):
+class CmdFunc(Protocol[P, R]):
     desc: CmdDesc
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
@@ -137,7 +138,7 @@ def paperchain(
         ("max_ring_size", IntArg),
         ("rib_width", FloatArg),
         ("rib_height", FloatArg),
-        ("color", EnumOf(("bydihedral",))),
+        ("colormap", EnumOf(("default", "norm"))),
         ("gum_twist", BoolArg),
     ],
 )
@@ -151,13 +152,21 @@ def twister(
     max_ring_size=10,
     rib_width=0.3,
     rib_height=0.05,
-    color: str | None = None,
+    colormap=None,
     gum_twist=False,
 ):
     """Twister description"""
 
     structures = check_structures(structures, session)
-    color_bydihedral = color == "bydihedral"
+
+    if colormap is None:
+        colormap = None
+    elif colormap == "default":
+        colormap = dihedral_colormap
+    elif colormap == "norm":
+        colormap = dihedral_norm_colormap
+    else:
+        raise ValueError(f"{colormap!r} is not a valid color map name")
 
     models: list[TwisterModel] = []
 
@@ -179,7 +188,7 @@ def twister(
                 max_ring_size=max_ring_size,
                 rib_width=rib_width,
                 rib_height=rib_height,
-                color_bydihedral=color_bydihedral,
+                colormap=colormap,
                 gum_twist=gum_twist,
             )
             new = True
@@ -191,7 +200,7 @@ def twister(
                 max_ring_size=max_ring_size,
                 rib_width=rib_width,
                 rib_height=rib_height,
-                color_bydihedral=color_bydihedral,
+                colormap=colormap,
                 gum_twist=gum_twist,
             )
             new = False
@@ -217,6 +226,7 @@ def twister(
         ("update", BoolArg),
         ("max_ring_size", IntArg),
         ("radius", FloatArg),
+        ("colormap", EnumOf(("default", "norm"))),
     ],
 )
 def strand(
@@ -226,10 +236,18 @@ def strand(
     update=True,
     max_ring_size=10,
     radius=0.25,
+    colormap="default",
 ):
     """Strand description"""
 
     structures = check_structures(structures, session)
+
+    if colormap == "default":
+        colormap = dihedral_colormap
+    elif colormap == "norm":
+        colormap = dihedral_norm_colormap
+    else:
+        raise ValueError(f"{colormap!r} is not a valid color map name")
 
     models: list[StrandModel] = []
 
@@ -248,6 +266,7 @@ def strand(
                 update=update,
                 max_ring_size=max_ring_size,
                 radius=radius,
+                colormap=colormap,
             )
             new = True
         else:
@@ -255,6 +274,7 @@ def strand(
                 update=update,
                 max_ring_size=max_ring_size,
                 radius=radius,
+                colormap=colormap,
             )
             new = False
 
@@ -274,19 +294,31 @@ def strand(
 
 @cmd(
     required=[("bonds", Or(BondsArg, EmptyArg))],
-    keyword=[("max_ring_size", IntArg)],
+    keyword=[
+        ("max_ring_size", IntArg),
+        ("colormap", EnumOf(("default", "norm"))),
+    ],
     synopsis="color by dihedral angle",
 )
 def color_bydihedral(
     session: Session,
     bonds: Bonds | None,
     max_ring_size=10,
+    colormap="default",
 ):
     """Color by dihedral description"""
 
     if bonds is None:
         bonds = all_bonds(session)
-    color_bonds_bydihedral(bonds, max_ring_size)
+
+    if colormap == "default":
+        colormap = dihedral_colormap
+    elif colormap == "norm":
+        colormap = dihedral_norm_colormap
+    else:
+        raise ValueError(f"{colormap!r} is not a valid color map name")
+
+    color_bonds_bydihedral(bonds, max_ring_size, colormap)
 
 
 def check_structures(structures: Structures | None, session: Session) -> Structures:
