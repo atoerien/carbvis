@@ -16,133 +16,7 @@ if TYPE_CHECKING:
     float = float | np.floating
 
 
-def twister_draw_ribbon_extensions(
-    vertices: list[FloatArray],
-    normals: list[FloatArray],
-    triangles: list[tuple[int, int, int]],
-    vcolors: list[FloatArray],
-    start: FloatArray,
-    end: FloatArray,
-    right: FloatArray,
-    up: FloatArray,
-    rib_height: float,
-    rib_width: float,
-    top_color: FloatArray,
-    bottom_color: FloatArray,
-):
-    triangle_offset = len(vertices)
-
-    # vertices
-    for point in (start, end):
-        # top right (index +0)
-        vert = point + rib_height * up + rib_width * right
-        vertices.append(vert)
-        vcolors.append(top_color)
-        norm = up + right
-        norm /= np.linalg.norm(norm)
-        normals.append(norm)
-
-        # bottom right (index +1)
-        vert = point - rib_height * up + rib_width * right
-        vertices.append(vert)
-        vcolors.append(bottom_color)
-        norm = -up + right
-        norm /= np.linalg.norm(norm)
-        normals.append(norm)
-
-        # bottom left (index +2)
-        vert = point - rib_height * up - rib_width * right
-        vertices.append(vert)
-        vcolors.append(bottom_color)
-        norm = -up - right
-        norm /= np.linalg.norm(norm)
-        normals.append(norm)
-
-        # top left (index +3)
-        vert = point + rib_height * up - rib_width * right
-        vertices.append(vert)
-        vcolors.append(top_color)
-        norm = up - right
-        norm /= np.linalg.norm(norm)
-        normals.append(norm)
-
-    start_vertex_offset = triangle_offset
-    end_vertex_offset = triangle_offset + 4
-
-    # top 1
-    triangles.append(
-        (
-            start_vertex_offset,  # start, top right
-            end_vertex_offset,  # end, top right
-            start_vertex_offset + 3,  # start, top left
-        )
-    )
-
-    # top 2
-    triangles.append(
-        (
-            end_vertex_offset,  # end, top right
-            end_vertex_offset + 3,  # end, top left
-            start_vertex_offset + 3,  # start, top left
-        )
-    )
-
-    # bottom 1
-    triangles.append(
-        (
-            start_vertex_offset + 1,  # start, bottom right
-            start_vertex_offset + 2,  # start, bottom left
-            end_vertex_offset + 1,  # end, bottom right
-        )
-    )
-
-    # bottom 2
-    triangles.append(
-        (
-            end_vertex_offset + 1,  # end, bottom right
-            start_vertex_offset + 2,  # start, bottom left
-            end_vertex_offset + 2,  # end, bottom left
-        )
-    )
-
-    # right 1
-    triangles.append(
-        (
-            start_vertex_offset,  # start, top right
-            start_vertex_offset + 1,  # start, bottom right
-            end_vertex_offset,  # end, top right
-        )
-    )
-
-    # right 2
-    triangles.append(
-        (
-            end_vertex_offset,  # end, top right
-            start_vertex_offset + 1,  # start, bottom right
-            end_vertex_offset + 1,  # end, bottom right
-        )
-    )
-
-    # left 1
-    triangles.append(
-        (
-            start_vertex_offset + 3,  # start, top left
-            end_vertex_offset + 3,  # end, top left
-            start_vertex_offset + 2,  # start, bottom left
-        )
-    )
-
-    # left 2
-    triangles.append(
-        (
-            end_vertex_offset + 3,  # end, top left
-            end_vertex_offset + 2,  # end, bottom left
-            start_vertex_offset + 2,  # start, bottom left
-        )
-    )
-
-
-def twister_draw_hexagon(
+def draw_hexagon(
     vertices: list[FloatArray],
     normals: list[FloatArray],
     triangles: list[tuple[int, int, int]],
@@ -396,8 +270,13 @@ class TwisterModel(CarbVisModel):
             spline_c = start_tangent
             spline_d = start_rib
 
-            t = np.linspace(0, rib_interval, rib_steps + 1)
+            t = np.linspace(0, rib_interval, rib_steps + 1, dtype=np.float32)
             spath, stan = spline(spline_a, spline_b, spline_c, spline_d, t)
+
+            if start_end_centroid:
+                # extend the path to meet the centroids
+                spath = np.vstack((start_centroid, spath, end_centroid))
+                stan = np.vstack((start_tangent, stan, end_tangent))
 
             frames: list[Frame] = []
 
@@ -418,8 +297,7 @@ class TwisterModel(CarbVisModel):
             # tangent and forward are length 1, no need to norm
             right = np.cross(tangent, up)
 
-            start_frame = Frame(point, tangent, right, up)
-            frames.append(start_frame)
+            frames.append(Frame(point, tangent, right, up))
 
             for i in range(1, len(spath)):
                 prev_frame = frames[-1]
@@ -432,7 +310,7 @@ class TwisterModel(CarbVisModel):
                 # copy previous frame
                 frame = prev_frame.copy()
                 frame.origin = point
-                frame.arclength += np.linalg.norm(frame.origin - prev_frame.origin)
+                frame.arclength += np.linalg.norm(point - prev_frame.origin)
 
                 # rotate frame if tangents not parallel
                 if axis_norm > min_axis_norm:
@@ -448,17 +326,47 @@ class TwisterModel(CarbVisModel):
 
                 frames.append(frame)
 
-            end_frame = frames[-1]
+            if start_end_centroid:
+                spline_frames = frames[1:-1]
+            else:
+                spline_frames = frames
+            spline_end_frame = spline_frames[-1]
 
             end_right = np.cross(end_tangent, end_normal)
             end_right /= np.linalg.norm(end_right)
 
-            correction_angle = np.arccos(np.dot(end_right, end_frame.right))
-            if np.dot(np.cross(end_right, end_frame.right), end_tangent) > 0:
+            correction_angle = np.arccos(np.dot(end_right, spline_end_frame.right))
+            if np.dot(np.cross(end_right, spline_end_frame.right), end_tangent) > 0:
                 correction_angle *= -1
 
-            curr_angle = 0
-            total_arclength = frames[-1].arclength
+            x = np.linspace(0, 1, rib_steps + 1, dtype=np.float32)
+            if gum_twist:
+                twist = correction_angle * np.sin(np.pi * x / 2) ** 2
+            else:
+                twist = correction_angle * x
+
+            if start_end_centroid:
+                # twist last frame the full angle to line up with the end ring
+                frame = frames[-1]
+                frame.right = rotate(frame.right, frame.forward, correction_angle)
+                frame.up = rotate(frame.up, frame.forward, correction_angle)
+
+            # rotate frames about frame.forward (twist)
+            for i, frame in enumerate(spline_frames):
+                rot_angle = twist[i]
+                frame.right = rotate(frame.right, frame.forward, rot_angle)
+                frame.up = rotate(frame.up, frame.forward, rot_angle)
+
+            if gum_twist:
+                x = np.linspace(0, 1, len(spline_frames), dtype=np.float32)
+                wave = 1 - np.sin(np.pi * x) ** 4
+                width_factor = 0.75 * abs(correction_angle) / np.pi
+                width = rib_width * (width_factor * wave + (1 - width_factor))
+            else:
+                width = np.full(len(frames), rib_width, dtype=np.float32)
+
+            if start_end_centroid:
+                width = np.hstack((rib_width, width, rib_width))
 
             if colormap is not None:
                 color = colormap(link)
@@ -471,34 +379,12 @@ class TwisterModel(CarbVisModel):
             triangle_offset = len(vertices)
 
             for i, frame in enumerate(frames):
-                if gum_twist:
-                    inc_angle = (
-                        correction_angle
-                        * np.sin(np.pi * (i + 0.5) / rib_steps)
-                        * np.sin(np.pi / (2 * rib_steps))
-                    )
-                else:
-                    inc_angle = correction_angle / rib_steps
-
-                # Apply correcting rotation:
-                # Rotate frame angle curr_angle about frame.forward
-
-                frame.right = rotate(frame.right, frame.forward, curr_angle)
-                frame.up = rotate(frame.up, frame.forward, curr_angle)
-
-                curr_angle += inc_angle
-
-                if gum_twist:
-                    wave = np.cos(np.pi * frame.arclength / total_arclength) ** 2
-                    width_factor = 0.75 * abs(inc_angle * rib_steps / np.pi)
-                    width = rib_width * (width_factor * wave + (1 - width_factor))
-                else:
-                    width = rib_width
+                w = width[i]
 
                 # vertices (of this frame's rectangle)
 
                 # top right (index +0)
-                vert = frame.origin + rib_height * frame.up + width * frame.right
+                vert = frame.origin + rib_height * frame.up + w * frame.right
                 vertices.append(vert)
                 vcolors.append(top_color)
                 norm = frame.up + frame.right
@@ -506,7 +392,7 @@ class TwisterModel(CarbVisModel):
                 normals.append(norm)
 
                 # bottom right (index +1)
-                vert = frame.origin - rib_height * frame.up + width * frame.right
+                vert = frame.origin - rib_height * frame.up + w * frame.right
                 vertices.append(vert)
                 vcolors.append(bottom_color)
                 norm = -frame.up + frame.right
@@ -514,7 +400,7 @@ class TwisterModel(CarbVisModel):
                 normals.append(norm)
 
                 # bottom left (index +2)
-                vert = frame.origin - rib_height * frame.up - width * frame.right
+                vert = frame.origin - rib_height * frame.up - w * frame.right
                 vertices.append(vert)
                 vcolors.append(bottom_color)
                 norm = -frame.up - frame.right
@@ -522,7 +408,7 @@ class TwisterModel(CarbVisModel):
                 normals.append(norm)
 
                 # top left (index +3)
-                vert = frame.origin + rib_height * frame.up - width * frame.right
+                vert = frame.origin + rib_height * frame.up - w * frame.right
                 vertices.append(vert)
                 vcolors.append(top_color)
                 norm = frame.up - frame.right
@@ -533,7 +419,7 @@ class TwisterModel(CarbVisModel):
                     continue  # no triangles for the last frame
 
                 current_vertex_offset = triangle_offset + i * 4
-                next_vertex_offset = triangle_offset + (i + 1) * 4
+                next_vertex_offset = current_vertex_offset + 4
 
                 # top 1
                 triangles.append(
@@ -608,41 +494,13 @@ class TwisterModel(CarbVisModel):
                 )
 
             if start_end_centroid:
-                # Draw extensions of ribbon to meet hexagonal disks
-                twister_draw_ribbon_extensions(
-                    vertices,
-                    normals,
-                    triangles,
-                    vcolors,
-                    start_centroid,
-                    start_frame.origin,
-                    start_frame.right,
-                    start_frame.up,
-                    rib_height,
-                    rib_width,
-                    top_color,
-                    bottom_color,
-                )
-                twister_draw_ribbon_extensions(
-                    vertices,
-                    normals,
-                    triangles,
-                    vcolors,
-                    end_frame.origin,
-                    end_centroid,
-                    end_frame.right,
-                    end_frame.up,
-                    rib_height,
-                    rib_width,
-                    top_color,
-                    bottom_color,
-                )
-
                 # Draw hexagonal disks for joining rings
                 start_centroid_tuple = tuple(start_centroid)
                 if start_centroid_tuple not in disk_places:
                     disk_places.add(start_centroid_tuple)
-                    twister_draw_hexagon(
+
+                    start_frame = frames[0]
+                    draw_hexagon(
                         vertices,
                         normals,
                         triangles,
@@ -658,7 +516,9 @@ class TwisterModel(CarbVisModel):
                 end_centroid_tuple = tuple(end_centroid)
                 if end_centroid_tuple not in disk_places:
                     disk_places.add(end_centroid_tuple)
-                    twister_draw_hexagon(
+
+                    end_frame = frames[-1]
+                    draw_hexagon(
                         vertices,
                         normals,
                         triangles,
