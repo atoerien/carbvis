@@ -237,17 +237,6 @@ class CarbLinkage:
         return angles
 
 
-@dataclass
-class CarbChain:
-    """
-    A chain of rings, connected by linkages.
-    linkages[i] = rings[i] -> rings[i+1]
-    """
-
-    rings: list[CarbRing]
-    linkages: list[CarbLinkage]
-
-
 def find_rings(structure: Structure, max_size: int) -> list[CarbRing]:
     rings = [
         CarbRing.from_ring(ring)
@@ -333,60 +322,9 @@ def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
     return linkages
 
 
-def find_chains(linkages: list[CarbLinkage]) -> list[CarbChain]:
-    # directed graph
-    graph: dict[int, CarbLinkage] = {}
-    ring_has_edges_in: set[int] = set()
-    for linkage in linkages:
-        id_start_ring = id(linkage.start_ring)
-        if id_start_ring in graph:
-            print(f"warning: ignoring multiple edges out of ring {linkage.start_ring}")
-        else:
-            graph[id_start_ring] = linkage
+def paperchain_colormap(ring: CarbRing) -> FloatArray:
+    pucker = ring.calc_pucker_amplitude()
 
-        ring_has_edges_in.add(id(linkage.end_ring))
-
-    entrypoints: list[CarbRing] = []
-    for linkage in linkages:
-        start_ring = linkage.start_ring
-        if id(start_ring) not in ring_has_edges_in:
-            entrypoints.append(start_ring)
-
-    # graph should be a tree, so no entrypoints means no linkages
-    if not entrypoints:
-        return []
-
-    def get_neighbors(ring: CarbRing):
-        id_ring = id(ring)
-        if id_ring in graph:
-            return (graph[id_ring].end_ring,)
-        else:
-            return ()
-
-    chains: list[CarbChain] = []
-
-    for entrypoint in entrypoints:
-        for chain in dfs_paths(get_neighbors, entrypoint):
-            paths = [graph[id(r)] for r in chain[:-1]]
-            chains.append(CarbChain(chain, paths))
-
-    chains.sort(key=lambda c: len(c.rings), reverse=True)
-
-    visited: set[int] = set()
-    for chain in chains:
-        for i, ring in enumerate(chain.rings):
-            id_ring = id(ring)
-            if id_ring in visited:
-                del chain.rings[i + 1 :]
-                del chain.linkages[i:]
-                break
-            visited.add(id_ring)
-
-    # print(f"CHAINS: {len(chains)}")
-    return chains
-
-
-def paperchain_colormap(pucker: float) -> FloatArray:
     rgb = np.zeros(3, dtype=np.float32)  # default color is black
 
     # Hot to cold color map:

@@ -79,13 +79,25 @@ def spline(
     return path, tan
 
 
-def rotate(v: FloatArray, axis: FloatArray, angle: float):
-    """Rotate v about axis by angle using Rodrigues' formula."""
+def rotate(v: FloatArray, axis: FloatArray, angle: float) -> FloatArray:
+    """Rotate vector(s) v about axis by angle using Rodrigues' formula.
 
+    v: shape (3,) or (n, 3)
+    axis: shape (3,)
+    angle: float
+    """
     axis = axis / np.linalg.norm(axis)
     sin_a = np.sin(angle)
     cos_a = np.cos(angle)
-    return cos_a * v + (1 - cos_a) * np.dot(axis, v) * axis + sin_a * np.cross(axis, v)
+
+    v = np.atleast_2d(v)  # ensure (n, 3) shape
+
+    # dot product per row
+    dot = np.dot(v, axis)[:, None]  # shape (n, 1)
+
+    rotated = cos_a * v + (1 - cos_a) * dot * axis + sin_a * np.cross(axis, v)
+
+    return rotated if v.shape[0] > 1 else rotated[0]
 
 
 def xyz_to_spherical(xyz: FloatArray, axis=-1) -> FloatArray:

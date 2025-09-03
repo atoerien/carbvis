@@ -185,8 +185,7 @@ class PaperChainModel(CarbVisModel):
         for ring in rings:
             n = len(ring.atoms)  # the number of atoms in the current ring
 
-            pucker = ring.calc_pucker_amplitude()
-            color = paperchain_colormap(pucker)
+            color = paperchain_colormap(ring)
 
             ring_coords = ring.coords
             frame = ring.get_frame()

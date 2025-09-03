@@ -14,7 +14,7 @@ from chimerax.core.commands import (
 from chimerax.core.errors import UserError
 from chimerax.core.session import Session
 
-from .carbs import dihedral_colormap, dihedral_norm_colormap
+from .carbs import dihedral_colormap, dihedral_norm_colormap, paperchain_colormap
 from .coloring import color_bonds_bydihedral
 from .model import CarbVisModel
 from .paperchain import PaperChainModel
@@ -227,6 +227,9 @@ def twister(
         ("max_ring_size", IntArg),
         ("radius", FloatArg),
         ("colormap", EnumOf(("default", "norm"))),
+        ("candy_cane", BoolArg),
+        ("sphere_radius", FloatArg),
+        ("sphere_colormap", EnumOf(("paperchain",))),
     ],
 )
 def strand(
@@ -235,8 +238,11 @@ def strand(
     replace=True,
     update=True,
     max_ring_size=10,
-    radius=0.25,
+    radius=0.75,
     colormap="default",
+    candy_cane=False,
+    sphere_radius=None,
+    sphere_colormap=None,
 ):
     """Strand description"""
 
@@ -248,6 +254,14 @@ def strand(
         colormap = dihedral_norm_colormap
     else:
         raise ValueError(f"{colormap!r} is not a valid color map name")
+
+    if sphere_radius is None:
+        sphere_radius = radius
+
+    if sphere_colormap == "paperchain":
+        sphere_colormap = paperchain_colormap
+    elif sphere_colormap is not None:
+        raise ValueError(f"{sphere_colormap!r} is not a valid sphere color map name")
 
     models: list[StrandModel] = []
 
@@ -267,6 +281,9 @@ def strand(
                 max_ring_size=max_ring_size,
                 radius=radius,
                 colormap=colormap,
+                candy_cane=candy_cane,
+                sphere_radius=sphere_radius,
+                sphere_colormap=sphere_colormap,
             )
             new = True
         else:
@@ -275,6 +292,9 @@ def strand(
                 max_ring_size=max_ring_size,
                 radius=radius,
                 colormap=colormap,
+                candy_cane=candy_cane,
+                sphere_radius=sphere_radius,
+                sphere_colormap=sphere_colormap,
             )
             new = False
 
