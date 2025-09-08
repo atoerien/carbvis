@@ -373,8 +373,8 @@ class TwisterModel(CarbVisModel):
                 top_color = color
                 bottom_color = color
             else:
-                top_color = np.array([0.5, 0.5, 1.0], dtype=np.float32)
-                bottom_color = np.array([0.9, 0.9, 0.9], dtype=np.float32)
+                top_color = np.array([0.9, 0.9, 0.9], dtype=np.float32)
+                bottom_color = np.array([0.5, 0.5, 1.0], dtype=np.float32)
 
             triangle_offset = len(vertices)
 
