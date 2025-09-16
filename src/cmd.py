@@ -70,6 +70,8 @@ def cmd(
         ("bipyramid_height", FloatArg),
         ("max_ring_size", IntArg),
         ("tex_formula", EnumOf(("stripes", "grid", "diamond", "rings", "waves"))),
+        ("tex_period", IntArg),
+        ("tex_duty", FloatArg),
     ],
 )
 def paperchain(
@@ -80,6 +82,8 @@ def paperchain(
     bipyramid_height=1.0,
     max_ring_size=10,
     tex_formula=None,
+    tex_period=128,
+    tex_duty=0.5,
 ):
     """PaperChain description"""
 
@@ -103,6 +107,8 @@ def paperchain(
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
                 tex_formula=tex_formula,
+                tex_period=tex_period,
+                tex_duty=tex_duty,
             )
             new = True
         else:
@@ -111,6 +117,8 @@ def paperchain(
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
                 tex_formula=tex_formula,
+                tex_period=tex_period,
+                tex_duty=tex_duty,
             )
             new = False
 

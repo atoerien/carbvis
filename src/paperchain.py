@@ -104,6 +104,8 @@ class PaperChainModel(CarbVisModel):
         bipyramid_height: float,
         max_ring_size: int,
         tex_formula: str | None,
+        tex_period: int,
+        tex_duty: float,
     ):
         if name is None:
             name = f"{structure.name} PaperChain"
@@ -114,6 +116,8 @@ class PaperChainModel(CarbVisModel):
 
         self.texture: Texture = Texture(linear_interpolation=True)
         self.tex_formula = tex_formula
+        self.tex_period = tex_period
+        self.tex_duty = tex_duty
         self._update_texture()
 
     def update_params(
@@ -123,6 +127,8 @@ class PaperChainModel(CarbVisModel):
         bipyramid_height: float,
         max_ring_size: int,
         tex_formula: str | None,
+        tex_period: int,
+        tex_duty: float,
     ):
         if update != self.auto_update:
             self.auto_update = update
@@ -135,10 +141,15 @@ class PaperChainModel(CarbVisModel):
             self.max_ring_size = max_ring_size
             clear_geometry = True
 
-        # TODO: make more texture params configurable
         update_texture = False
         if tex_formula != self.tex_formula:
             self.tex_formula = tex_formula
+            update_texture = True
+        if tex_period != self.tex_period:
+            self.tex_period = tex_period
+            update_texture = True
+        if tex_duty != self.tex_duty:
+            self.tex_duty = tex_duty
             update_texture = True
 
         if clear_geometry:
@@ -150,8 +161,8 @@ class PaperChainModel(CarbVisModel):
         if self.tex_formula is not None:
             tex = make_texture(
                 formula=self.tex_formula,
-                period=128,
-                duty=0.5,
+                period=self.tex_period,
+                duty=self.tex_duty,
                 on_color=255,
                 off_color=128,
             )
