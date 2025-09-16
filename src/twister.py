@@ -359,9 +359,9 @@ class TwisterModel(CarbVisModel):
 
             if gum_twist:
                 x = np.linspace(0, 1, len(spline_frames), dtype=np.float32)
-                wave = 1 - np.sin(np.pi * x) ** 4
+                wave = np.sin(np.pi * x) ** 4
                 width_factor = 0.75 * abs(correction_angle) / np.pi
-                width = rib_width * (width_factor * wave + (1 - width_factor))
+                width = rib_width * (1 - width_factor * wave)
             else:
                 width = np.full(len(frames), rib_width, dtype=np.float32)
 
