@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 TIMING = False
-TIMING = True
+# TIMING = True
 
 # stop complaining when assigning float32 to float
 if TYPE_CHECKING:
