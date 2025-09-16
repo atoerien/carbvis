@@ -205,10 +205,6 @@ class TwisterModel(CarbVisModel):
         rings = find_rings(self.structure, self.max_ring_size)
         linkages = find_linkages(rings)
 
-        # Threshold to determine when we have a reliable
-        # rotation axis to rotate a frame about
-        min_axis_norm = 1e-4
-
         vertices = []
         normals = []
         triangles = []
@@ -303,25 +299,13 @@ class TwisterModel(CarbVisModel):
                 point = spath[i]
                 tangent = stan[i]
 
-                rot_axis = np.cross(prev_frame.forward, tangent)
-                axis_norm = np.linalg.norm(rot_axis)
-
                 # copy previous frame
                 frame = prev_frame.copy()
                 frame.origin = point
                 frame.arclength += np.linalg.norm(point - prev_frame.origin)
 
-                # rotate frame if tangents not parallel
-                if axis_norm > min_axis_norm:
-                    rot_angle = np.arccos(
-                        # float shenanigans
-                        np.clip(np.dot(prev_frame.forward, tangent), -1.0, 1.0)
-                    )
-
-                    # Rotate frame angle rot_angle about rot_axis
-                    frame.forward = rotate(frame.forward, rot_axis, rot_angle)
-                    frame.right = rotate(frame.right, rot_axis, rot_angle)
-                    frame.up = rotate(frame.up, rot_axis, rot_angle)
+                # align frame with tangent
+                frame.align(tangent)
 
                 frames.append(frame)
 

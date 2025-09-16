@@ -208,3 +208,21 @@ class Frame:
             up=np.copy(self.up),
             arclength=self.arclength,
         )
+
+    def align(self, forward: FloatArray):
+        """Align frame to a forward vector"""
+
+        rot_axis = np.cross(self.forward, forward)
+        axis_norm = np.linalg.norm(rot_axis)
+
+        # skip rotation if we're already aligned
+        if axis_norm > 1e-4:
+            rot_angle = np.arccos(
+                # float shenanigans
+                np.clip(np.dot(self.forward, forward), -1.0, 1.0)
+            )
+
+            # rotate frame angle rot_angle about rot_axis
+            self.forward = rotate(self.forward, rot_axis, rot_angle)
+            self.right = rotate(self.right, rot_axis, rot_angle)
+            self.up = rotate(self.up, rot_axis, rot_angle)

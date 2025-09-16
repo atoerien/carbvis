@@ -34,10 +34,6 @@ def draw_tube(
     segment_subdivisions: int,
     circle_subdivisions: int,
 ):
-    # Threshold to determine when we have a reliable
-    # rotation axis to rotate a frame about
-    min_axis_norm = 1e-4
-
     start_ring = linkage.start_ring
     start_centroid, start_normal = start_ring.get_centroid_and_normal()
 
@@ -115,25 +111,13 @@ def draw_tube(
         point = spath[i]
         tangent = stan[i]
 
-        rot_axis = np.cross(prev_frame.forward, tangent)
-        axis_norm = np.linalg.norm(rot_axis)
-
         # copy previous frame
         frame = prev_frame.copy()
         frame.origin = point
         frame.arclength += np.linalg.norm(point - prev_frame.origin)
 
-        # rotate frame if tangents not parallel
-        if axis_norm > min_axis_norm:
-            rot_angle = np.arccos(
-                # float shenanigans
-                np.clip(np.dot(prev_frame.forward, tangent), -1.0, 1.0)
-            )
-
-            # Rotate frame angle rot_angle about rot_axis
-            frame.forward = rotate(frame.forward, rot_axis, rot_angle)
-            frame.right = rotate(frame.right, rot_axis, rot_angle)
-            frame.up = rotate(frame.up, rot_axis, rot_angle)
+        # align frame with tangent
+        frame.align(tangent)
 
         frames.append(frame)
 
@@ -266,10 +250,6 @@ def draw_sphere(
     candy_cane: bool,
     circle_subdivisions,
 ):
-    # Threshold to determine when we have a reliable
-    # rotation axis to rotate a frame about
-    min_axis_norm = 1e-4
-
     n_lon = 128
     lat_inc = np.pi / circle_subdivisions
     n_lat = circle_subdivisions // 2 + 2
@@ -293,11 +273,13 @@ def draw_sphere(
     n_top = np.array([0, 0, 1])
     n_bot = np.array([0, 0, -1])
 
+    # align top vector of sphere to up
+
     rot_axis = np.cross(n_top, up)
     axis_norm = np.linalg.norm(rot_axis)
 
-    # rotate frame if tangents not parallel
-    if axis_norm > min_axis_norm:
+    # skip rotation if we're already aligned
+    if axis_norm > 1e-4:
         rot_angle = np.arccos(
             # float shenanigans
             np.clip(np.dot(n_top, up), -1.0, 1.0)
