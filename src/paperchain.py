@@ -173,8 +173,7 @@ class PaperChainModel(CarbVisModel):
     def _do_auto_update(self, changes: Changes):
         super()._do_auto_update(changes)
 
-        # TODO: does this work for new bonds/atoms?
-        if self._coordinates_changed(changes):
+        if self._structure_changed(changes):
             self._recalculate_graphics()
 
     @time

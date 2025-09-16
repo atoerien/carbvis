@@ -1,5 +1,5 @@
 import numpy as np
-from chimerax.atomic import Atoms, Structure, get_triggers
+from chimerax.atomic import Structure, get_triggers
 from chimerax.atomic.changes import Changes
 from chimerax.core.models import Model
 from chimerax.core.session import Session
@@ -28,8 +28,8 @@ class CarbVisModel(Model):
         # self.selection_coupled = atoms.unique_structures
 
         self.structure = structure
-        self.atoms: Atoms = structure.atoms
-        self._atom_count = len(self.atoms)  # Used to check if atoms deleted
+        self._atom_count = structure.num_atoms  # Used to check if atoms deleted
+        self._bond_count = structure.num_bonds  # Used to check if bonds deleted
 
         self._auto_update_handler = None
         self.auto_update = update
@@ -70,33 +70,32 @@ class CarbVisModel(Model):
         # do nothing, override in subclasses
         pass
 
-    def _coordinates_changed(self, changes: Changes):
+    def _structure_changed(self, changes: Changes):
+        """Check whether the atoms or bonds in the structure changed"""
+
+        structure = self.structure
+        if structure.num_atoms != self._atom_count:
+            self._atom_count = structure.num_atoms
+            # bond count might also have changed
+            self._bond_count = structure.num_bonds
+            return True
+        if structure.num_bonds != self._bond_count:
+            self._bond_count = structure.num_bonds
+            return True
         if "active_coordset changed" in changes.structure_reasons():
             # Active coord set index changed.  Playing a trajectory.
             for s in changes.modified_structures():
                 if s == self.structure:
                     return True
-        if "coord changed" in changes.atom_reasons():
-            # Atom coordinates changed through Atom or Atoms set_coord()
-            if self.atoms.intersects(changes.modified_atoms()):
-                return True
-        elif "coordset changed" in changes.coordset_reasons():
+        if "coordset changed" in changes.coordset_reasons():
             # Atom coordinates changed through CoordSet object.
-            # TODO: If 'coord changed' and 'coordset changed' currently we only
-            #   look at 'coord changed' atoms to avoid updating surfaces for
-            #   atoms that have not changed.  For example changing one rotamer
-            #   only updates one chain surface instead of all chain surfaces.
-            #   Currently there is no Python CoordSet method to set coordinates.
             for cs in changes.modified_coordsets():
                 if cs.structure == self.structure:
                     return True
-        if changes.num_deleted_atoms() > 0 and len(self.atoms) < self._atom_count:
-            self._atom_count = len(self.atoms)
-            return True
         return False
 
     def _recalculate_graphics(self):
-        if len(self.atoms) == 0:
+        if self.structure.num_atoms == 0:
             self.session.models.close([self])
         else:
             self._clear_geometry()
