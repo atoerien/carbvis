@@ -81,6 +81,9 @@ def ring_tex(ring_coords: FloatArray, frame: Frame) -> FloatArray:
     return tex
 
 
+PAPERCHAIN_STATE_VERSION = 1
+
+
 class PaperChainModel(CarbVisModel):
     def __init__(
         self,
@@ -270,3 +273,53 @@ class PaperChainModel(CarbVisModel):
         self.set_geometry(va, na, ta)
         self.set_vertex_colors(color_float_to_ubyte(ca))
         self.texture_coordinates = tc
+
+    _save_attrs = (
+        "vertices",
+        "normals",
+        "triangles",
+        "vertex_colors",
+        "texture_coordinates",
+    )
+
+    def take_snapshot(self, session: Session, flags: int):
+        data = {
+            "structure": self.structure,
+            "name": self.name,
+            "update": self.auto_update,
+            "bipyramid_height": self.bipyramid_height,
+            "max_ring_size": self.max_ring_size,
+            "tex_formula": self.tex_formula,
+            "tex_period": self.tex_period,
+            "tex_duty": self.tex_duty,
+        }
+        data["model state"] = CarbVisModel.take_snapshot(self, session, flags)
+        for attr in self._save_attrs:
+            data[attr] = getattr(self, attr)
+        data["version"] = PAPERCHAIN_STATE_VERSION
+        return data
+
+    @classmethod
+    def restore_snapshot(cls, session: Session, data: dict):
+        ret = PaperChainModel(
+            session,
+            data["structure"],
+            data["name"],
+            update=data["update"],
+            bipyramid_height=data["bipyramid_height"],
+            max_ring_size=data["max_ring_size"],
+            tex_formula=data["tex_formula"],
+            tex_period=data["tex_period"],
+            tex_duty=data["tex_duty"],
+        )
+        ret.set_state_from_snapshot(session, data)
+        return ret
+
+    def set_state_from_snapshot(self, session, data):
+        CarbVisModel.set_state_from_snapshot(self, session, data["model state"])
+
+        geom_attrs = ("vertices", "normals", "triangles")
+        self.set_geometry(data["vertices"], data["normals"], data["triangles"])
+        for attr in PaperChainModel._save_attrs:
+            if attr not in geom_attrs:
+                setattr(self, attr, data[attr])

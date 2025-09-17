@@ -360,6 +360,9 @@ def draw_sphere(
         triangles.append((k0, k2, k1))
 
 
+STRAND_STATE_VERSION = 1
+
+
 class StrandModel(CarbVisModel):
     def __init__(
         self,
@@ -517,3 +520,54 @@ class StrandModel(CarbVisModel):
 
         self.set_geometry(va, na, ta)
         self.set_vertex_colors(color_float_to_ubyte(ca))
+
+    _save_attrs = (
+        "vertices",
+        "normals",
+        "triangles",
+        "vertex_colors",
+    )
+
+    def take_snapshot(self, session: Session, flags: int):
+        data = {
+            "structure": self.structure,
+            "name": self.name,
+            "update": self.auto_update,
+            "max_ring_size": self.max_ring_size,
+            "radius": self.radius,
+            "colormap": self.colormap,
+            "candy_cane": self.candy_cane,
+            "sphere_radius": self.sphere_radius,
+            "sphere_colormap": self.sphere_colormap,
+        }
+        data["model state"] = CarbVisModel.take_snapshot(self, session, flags)
+        for attr in self._save_attrs:
+            data[attr] = getattr(self, attr)
+        data["version"] = STRAND_STATE_VERSION
+        return data
+
+    @classmethod
+    def restore_snapshot(cls, session: Session, data: dict):
+        ret = StrandModel(
+            session,
+            data["structure"],
+            data["name"],
+            update=data["update"],
+            max_ring_size=data["max_ring_size"],
+            radius=data["radius"],
+            colormap=data["colormap"],
+            candy_cane=data["candy_cane"],
+            sphere_radius=data["sphere_radius"],
+            sphere_colormap=data["sphere_colormap"],
+        )
+        ret.set_state_from_snapshot(session, data)
+        return ret
+
+    def set_state_from_snapshot(self, session, data):
+        CarbVisModel.set_state_from_snapshot(self, session, data["model state"])
+
+        geom_attrs = ("vertices", "normals", "triangles")
+        self.set_geometry(data["vertices"], data["normals"], data["triangles"])
+        for attr in StrandModel._save_attrs:
+            if attr not in geom_attrs:
+                setattr(self, attr, data[attr])

@@ -4,6 +4,8 @@ from chimerax.atomic.changes import Changes
 from chimerax.core.models import Model
 from chimerax.core.session import Session
 
+MODEL_STATE_VERSION = 1
+
 
 class CarbVisModel(Model):
     """
@@ -62,7 +64,7 @@ class CarbVisModel(Model):
             self._auto_update_handler = None
 
     def _auto_update_cb(self, trigger_name, changes: Changes):
-        if self.deleted:
+        if self.deleted or self.structure.deleted:
             return "delete handler"
         self._do_auto_update(changes)
 
@@ -114,6 +116,29 @@ class CarbVisModel(Model):
 
         self._calc_graphics()
 
+    def take_snapshot(self, session: Session, flags: int):
+        data = {
+            "structure": self.structure,
+            "name": self.name,
+            "update": self.auto_update,
+        }
+        data["model state"] = Model.take_snapshot(self, session, flags)
+        data["version"] = MODEL_STATE_VERSION
+        return data
+
+    @classmethod
+    def restore_snapshot(cls, session: Session, data: dict):
+        ret = CarbVisModel(
+            session,
+            data["structure"],
+            data["name"],
+            update=data["update"],
+        )
+        ret.set_state_from_snapshot(session, data)
+        return ret
+
+    def set_state_from_snapshot(self, session, data):
+        Model.set_state_from_snapshot(self, session, data["model state"])
+
     # TODO: make selection select the whole chain/ring/etc
     # TODO: make hide/show work
-    # TODO: make save/restore work

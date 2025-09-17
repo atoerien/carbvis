@@ -23,5 +23,26 @@ class _CarbVisAPI(BundleAPI):
 
         register(ci.name, desc, fn)
 
+    @staticmethod
+    def get_class(name: str):  # pyright: ignore[reportIncompatibleMethodOverride]
+        if name == "CarbVisModel":
+            from .model import CarbVisModel
+
+            return CarbVisModel
+        elif name == "PaperChainModel":
+            from .paperchain import PaperChainModel
+
+            return PaperChainModel
+        elif name == "StrandModel":
+            from .strand import StrandModel
+
+            return StrandModel
+        elif name == "TwisterModel":
+            from .twister import TwisterModel
+
+            return TwisterModel
+        else:
+            return None
+
 
 bundle_api = _CarbVisAPI()

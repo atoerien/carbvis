@@ -24,6 +24,11 @@ class CarbRing:
     def from_ring(cls, ring: Ring) -> Self:
         atoms: Atoms = ring.ordered_atoms
 
+        # roll the atoms list for a consistent ring ordering
+        roll_shift = -np.argmin([a.name for a in atoms])
+        if roll_shift != 0:
+            atoms = Atoms(np.roll(atoms.pointers, roll_shift))
+
         residues: Residues = atoms.unique_residues
         if len(residues) != 1:
             raise ValueError("Ring crosses residue boundary")
@@ -63,19 +68,16 @@ class CarbRing:
             return False
 
         # find atoms before and after oxygen (taking into account wrapping)
-
         atom_before_O = self[oxygen - 1]
-
-        if oxygen == len(self.atoms) - 1:
-            atom_after_O = self[0]
-        else:
-            atom_after_O = self[oxygen + 1]
+        atom_after_O = self[(oxygen + 1) % len(self.atoms)]
 
         # ensure C1 carbon is after the oxygen
         # leave unorientated if the C1 carbon can't be found
         if atom_before_O.name in ("C1", "C1'", "C_1", "C2", "C2'", "C_2"):
-            # reverse atom list
-            self.atoms = Atoms(np.flip(self.atoms.pointers))
+            # reverse atom list, while keeping the first atom in the same place
+            ptrs = self.atoms.pointers
+            ptrs[1:] = np.flip(ptrs[1:])
+            self.atoms = Atoms(ptrs)
             self.orientated = True
             return True
         elif atom_after_O.name in ("C1", "C1'", "C_1", "C2", "C2'", "C_2"):

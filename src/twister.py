@@ -118,6 +118,9 @@ def draw_hexagon(
         )
 
 
+TWISTER_STATE_VERSION = 1
+
+
 class TwisterModel(CarbVisModel):
     def __init__(
         self,
@@ -561,3 +564,56 @@ class TwisterModel(CarbVisModel):
 
         self.set_geometry(va, na, ta)
         self.set_vertex_colors(color_float_to_ubyte(ca))
+
+    _save_attrs = (
+        "vertices",
+        "normals",
+        "triangles",
+        "vertex_colors",
+    )
+
+    def take_snapshot(self, session: Session, flags: int):
+        data = {
+            "structure": self.structure,
+            "name": self.name,
+            "update": self.auto_update,
+            "start_end_centroid": self.start_end_centroid,
+            "rib_steps": self.rib_steps,
+            "max_ring_size": self.max_ring_size,
+            "rib_width": self.rib_width,
+            "rib_height": self.rib_height,
+            "colormap": self.colormap,
+            "gum_twist": self.gum_twist,
+        }
+        data["model state"] = CarbVisModel.take_snapshot(self, session, flags)
+        for attr in self._save_attrs:
+            data[attr] = getattr(self, attr)
+        data["version"] = TWISTER_STATE_VERSION
+        return data
+
+    @classmethod
+    def restore_snapshot(cls, session: Session, data: dict):
+        ret = TwisterModel(
+            session,
+            data["structure"],
+            data["name"],
+            update=data["update"],
+            start_end_centroid=data["start_end_centroid"],
+            rib_steps=data["rib_steps"],
+            max_ring_size=data["max_ring_size"],
+            rib_width=data["rib_width"],
+            rib_height=data["rib_height"],
+            colormap=data["colormap"],
+            gum_twist=data["gum_twist"],
+        )
+        ret.set_state_from_snapshot(session, data)
+        return ret
+
+    def set_state_from_snapshot(self, session, data):
+        CarbVisModel.set_state_from_snapshot(self, session, data["model state"])
+
+        geom_attrs = ("vertices", "normals", "triangles")
+        self.set_geometry(data["vertices"], data["normals"], data["triangles"])
+        for attr in TwisterModel._save_attrs:
+            if attr not in geom_attrs:
+                setattr(self, attr, data[attr])
