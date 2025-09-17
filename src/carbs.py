@@ -12,8 +12,15 @@ from .utils import FloatArray, Frame, dfs_paths, gaussian
 class CarbRing:
     """
     A ring of atoms connected to each other in a loop.
-    If orientated is True, the order of atoms gives the
-    orientation (handedness) of the ring.
+
+    Indexing, length and iteration operations are forwarded to the
+    atoms list.
+
+    Attributes:
+        atoms: The atoms in the ring.
+        residue: The residue the atoms are part of.
+        orientation: Indicates if the order of the atoms corresponds
+            to the orientation (handedness) of the ring.
     """
 
     atoms: Atoms
@@ -22,6 +29,12 @@ class CarbRing:
 
     @classmethod
     def from_ring(cls, ring: Ring) -> Self:
+        """
+        Create an instance from a Ring object.
+
+        The ring must not cross a residue boundary.
+        """
+
         atoms: Atoms = ring.ordered_atoms
 
         # roll the atoms list for a consistent ring ordering
@@ -52,9 +65,18 @@ class CarbRing:
 
     @property
     def coords(self) -> FloatArray:
+        """The atom coordinates."""
         return self.atoms.coords
 
     def orientate(self) -> bool:
+        """
+        Orientate the ring, flipping the atom list such that the
+        order corresponds to the handedness of the ring.
+
+        Returns:
+            Whether the ring was able to be oriented or not.
+        """
+
         oxygen = -1
 
         # Find an oxygen (or something with two bonds)
@@ -87,9 +109,20 @@ class CarbRing:
             return False
 
     def get_centroid(self) -> FloatArray:
+        """Calculate the ring centroid."""
         return np.mean(self.coords, axis=0)
 
     def get_centroid_and_normal(self) -> tuple[FloatArray, FloatArray]:
+        """
+        Calculate the ring centroid and normal vector.
+
+        The returned normal vector points in the direction of the
+        "top" of the ring (a left-handed normal).
+
+        Returns:
+            A tuple (centroid, normal).
+        """
+
         ring_coords = self.coords
 
         n = ring_coords.shape[0]
@@ -124,6 +157,13 @@ class CarbRing:
         return centroid, normal
 
     def get_frame(self) -> Frame:
+        """
+        Return a Frame corresponding to the plane of the ring.
+
+        The forward vector of the frame points towards the first atom,
+        and the up vector is the ring normal.
+        """
+
         centroid, up = self.get_centroid_and_normal()
 
         # use the first atom as forward, should not be parallel to up
@@ -143,7 +183,7 @@ class CarbRing:
 
         return Frame(centroid, forward, right, up)
 
-    def calc_pucker_amplitude(self):
+    def calc_pucker_amplitude(self) -> float:
         """
         Calculate the Cremer-Pople puckering amplitude for this ring.
         """
@@ -184,7 +224,11 @@ class CarbRing:
 class CarbLinkage:
     """
     A (C1->Cx) linkage between two rings.
-    start_ring -> *atoms -> end_ring
+
+    Attributes:
+        atoms: The atoms in the linkage.
+        start_ring: The start ring, containing atoms[0].
+        end_ring: The end ring, containing atoms[-1].
     """
 
     atoms: list[Atom]
@@ -192,6 +236,8 @@ class CarbLinkage:
     end_ring: CarbRing
 
     def calc_angles(self) -> FloatArray:
+        """Calculate the dihedral angles associated with the linkage."""
+
         n = len(self.atoms)
 
         if n < 2:
@@ -240,6 +286,8 @@ class CarbLinkage:
 
 
 def find_rings(structure: Structure, max_size: int) -> list[CarbRing]:
+    """Find all rings in structure, with maximum size max_size."""
+
     rings = [
         CarbRing.from_ring(ring)
         for ring in structure.rings(cross_residue=False, all_size_threshold=max_size)
@@ -249,6 +297,8 @@ def find_rings(structure: Structure, max_size: int) -> list[CarbRing]:
 
 
 def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
+    """Find all linkages between the rings."""
+
     atom_to_ring: dict[Atom, CarbRing] = {}
     multi_ring_atoms: set[Atom] = set()
 
@@ -325,6 +375,13 @@ def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
 
 
 def paperchain_colormap(ring: CarbRing) -> FloatArray:
+    """
+    Calculate the color for a ring, using the PaperChain algorithm.
+
+    Returns:
+        The calculated color as an RGB [0, 1] float array.
+    """
+
     pucker = ring.calc_pucker_amplitude()
 
     rgb = np.zeros(3, dtype=np.float32)  # default color is black

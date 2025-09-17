@@ -7,11 +7,21 @@ from .carbs import CarbLinkage, find_linkages, find_rings
 from .utils import FloatArray, color_float_to_ubyte
 
 
-def color_bonds_bydihedral(
+def color_linkage_bonds(
     bonds: Bonds,
     max_ring_size: int,
     colormap: Callable[[CarbLinkage], FloatArray],
 ):
+    """
+    Set the color of linkage bonds using a colormap.
+
+    Args:
+        bonds: The bonds to color.
+        max_ring_size: A ring size limit when finding rings.
+        colormap: The colormap to use, mapping a CarbLinkage to an
+            RGB [0, 1] float array.
+    """
+
     for structure, bonds in bonds.by_structure:
         structure: Structure
 

@@ -1,7 +1,7 @@
 from typing import Callable, ParamSpec, Protocol, TypeVar, cast
 
 from chimerax.atomic import Bonds, Structure, Structures, all_bonds, all_structures
-from chimerax.atomic.args import AtomsArg, BondsArg, StructuresArg
+from chimerax.atomic.args import BondsArg, StructuresArg
 from chimerax.core.commands import (
     BoolArg,
     CmdDesc,
@@ -15,7 +15,7 @@ from chimerax.core.errors import UserError
 from chimerax.core.session import Session
 
 from .carbs import dihedral_colormap, dihedral_norm_colormap, paperchain_colormap
-from .coloring import color_bonds_bydihedral
+from .coloring import color_linkage_bonds
 from .model import CarbVisModel
 from .paperchain import PaperChainModel
 from .strand import StrandModel
@@ -43,6 +43,8 @@ def cmd(
     synopsis=None,
     self_logging=False,
 ):
+    """A decorator to create a CmdFunc from a function."""
+
     def decorator(func: Callable[P, R]) -> CmdFunc[P, R]:
         ret = cast(CmdFunc, func)
         ret.desc = CmdDesc(
@@ -73,6 +75,7 @@ def cmd(
         ("tex_period", IntArg),
         ("tex_duty", FloatArg),
     ],
+    synopsis="Adds a PaperChain visualization to structures.",
 )
 def paperchain(
     session: Session,
@@ -85,7 +88,21 @@ def paperchain(
     tex_period=128,
     tex_duty=0.5,
 ):
-    """PaperChain description"""
+    """
+    Adds a PaperChain visualization to structures.
+
+    Args:
+        structures: The structures to add the visualization to.
+        replace: Whether to replace existing PaperChain models.
+        update: Whether to automatically update the model if the
+            structure changes.
+        bypyramid_height: The height of the PaperChain polygon.
+        max_ring_size: A ring size limit when finding rings.
+        tex_formula: The formula to use for the ring texture.
+            One of 'stripes', 'grid', 'diamond', 'rings', 'waves'
+        tex_period: The length of the texture period, in pixels.
+        tex_duty: The fractional duty cycle of the repeating texture.
+    """
 
     structures = check_structures(structures, session)
 
@@ -149,6 +166,7 @@ def paperchain(
         ("colormap", EnumOf(("default", "norm"))),
         ("gum_twist", BoolArg),
     ],
+    synopsis="Adds a Twister visualization to structures.",
 )
 def twister(
     session: Session,
@@ -163,7 +181,24 @@ def twister(
     colormap=None,
     gum_twist=False,
 ):
-    """Twister description"""
+    """
+    Adds a Twister visualization to structures.
+
+    Args:
+        structures: The structures to add the visualization to.
+        replace: Whether to replace existing PaperChain models.
+        update: Whether to automatically update the model if the
+            structure changes.
+        start_end_centroid: Whether to connect the Twister ribbons
+            at the centroid of each ring.
+        rib_steps: The number of steps used when rendering each ribbon.
+        max_ring_size: A ring size limit when finding rings.
+        rib_width: The ribbon width.
+        rib_height: The ribbon height.
+        colormap: Specify to use a colormap to set the ribbon color.
+            One of 'default' or 'norm'.
+        gum_twist: Whether to enable the Twister Gum variant.
+    """
 
     structures = check_structures(structures, session)
 
@@ -239,6 +274,7 @@ def twister(
         ("sphere_radius", FloatArg),
         ("sphere_colormap", EnumOf(("paperchain",))),
     ],
+    synopsis="Adds a Strand visualization to structures.",
 )
 def strand(
     session: Session,
@@ -252,7 +288,23 @@ def strand(
     sphere_radius=None,
     sphere_colormap=None,
 ):
-    """Strand description"""
+    """
+    Adds a Strand visualization to structures.
+
+    Args:
+        structures: The structures to add the visualization to.
+        replace: Whether to replace existing PaperChain models.
+        update: Whether to automatically update the model if the
+            structure changes.
+        max_ring_size: A ring size limit when finding rings.
+        radius: The radius of the tubes.
+        colormap: The colormap used to set the tube color.
+        candy_cane: Whether to enable the Candy Cane variant.
+            One of 'default' or 'norm'.
+        sphere_radius: Specify to render spheres at each ring.
+        sphere_colormap: The colormap used to set the sphere color.
+            One of: 'paperchain'.
+    """
 
     structures = check_structures(structures, session)
 
@@ -326,7 +378,7 @@ def strand(
         ("max_ring_size", IntArg),
         ("colormap", EnumOf(("default", "norm"))),
     ],
-    synopsis="color by dihedral angle",
+    synopsis="Color bonds by linkage dihedral angles.",
 )
 def color_bydihedral(
     session: Session,
@@ -334,7 +386,14 @@ def color_bydihedral(
     max_ring_size=10,
     colormap="default",
 ):
-    """Color by dihedral description"""
+    """
+    Color bonds by linkage dihedral angles.
+
+    Args:
+        bonds: The bonds to color.
+        max_ring_size: A ring size limit when finding rings.
+        colormap: The colormap to use. One of 'default' or 'norm'.
+    """
 
     if bonds is None:
         bonds = all_bonds(session)
@@ -346,7 +405,7 @@ def color_bydihedral(
     else:
         raise ValueError(f"{colormap!r} is not a valid color map name")
 
-    color_bonds_bydihedral(bonds, max_ring_size, colormap)
+    color_linkage_bonds(bonds, max_ring_size, colormap)
 
 
 def check_structures(structures: Structures | None, session: Session) -> Structures:

@@ -34,6 +34,8 @@ def draw_tube(
     segment_subdivisions: int,
     circle_subdivisions: int,
 ):
+    """Draw a tube along a linkage."""
+
     start_ring = linkage.start_ring
     start_centroid, start_normal = start_ring.get_centroid_and_normal()
 
@@ -114,7 +116,6 @@ def draw_tube(
         # copy previous frame
         frame = prev_frame.copy()
         frame.origin = point
-        frame.arclength += np.linalg.norm(point - prev_frame.origin)
 
         # align frame with tangent
         frame.align(tangent)
@@ -250,6 +251,8 @@ def draw_sphere(
     candy_cane: bool,
     circle_subdivisions,
 ):
+    """Draw a sphere at an origin."""
+
     n_lon = 128
     lat_inc = np.pi / circle_subdivisions
     n_lat = circle_subdivisions // 2 + 2

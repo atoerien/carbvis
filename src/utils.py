@@ -33,6 +33,8 @@ R = TypeVar("R")
 
 
 def time(fn: Callable[P, R]) -> Callable[P, R]:
+    """Decorator to report a function's runtime, no-op if TIMING is False."""
+
     if not TIMING:
         return fn
 
@@ -58,9 +60,9 @@ def spline(
     t: float | FloatArray,
 ) -> tuple[FloatArray, FloatArray]:
     """
-    Calculates the position at point(s) t along the spline
-    with co-efficients A, B, C and D.
-    spline(t) = ((A * t + B) * t + C) * t + D
+    Calculate the position and tangent at point(s) t
+    along the spline with co-efficients a, b, c and d.
+    spline(t) = ((a * t + b) * t + c) * t + d
     """
     t = np.asarray(t).reshape(-1, 1)
 
@@ -80,12 +82,8 @@ def spline(
 
 
 def rotate(v: FloatArray, axis: FloatArray, angle: float) -> FloatArray:
-    """Rotate vector(s) v about axis by angle using Rodrigues' formula.
+    """Rotate vector(s) v about axis by angle using Rodrigues' formula."""
 
-    v: shape (3,) or (n, 3)
-    axis: shape (3,)
-    angle: float
-    """
     axis = axis / np.linalg.norm(axis)
     sin_a = np.sin(angle)
     cos_a = np.cos(angle)
@@ -101,6 +99,20 @@ def rotate(v: FloatArray, axis: FloatArray, angle: float) -> FloatArray:
 
 
 def xyz_to_spherical(xyz: FloatArray, axis=-1) -> FloatArray:
+    """
+    Convert Cartesian coordinates to spherical coordinates.
+
+    Args:
+        xyz: Input array of Cartesian (x, y, z) coordinates. The last dimension
+            (or specified axis) must have length 3.
+        axis: Axis along which the Cartesian coordinates are stored. Defaults
+            to -1 if omitted.
+
+    Returns:
+        An array of spherical (r, theta, phi) coordinates with the same shape
+        as xyz.
+    """
+
     x, y, z = np.moveaxis(xyz, axis, 0)
 
     lea = np.empty_like(xyz)
@@ -116,6 +128,19 @@ def xyz_to_spherical(xyz: FloatArray, axis=-1) -> FloatArray:
 
 
 def spherical_to_xyz(lea: FloatArray, axis=-1) -> FloatArray:
+    """
+    Convert spherical coordinates to Cartesian coordinates.
+
+    Args:
+        lea: Input array of spherical (r, theta, phi) coordinates. The last
+            dimension (or specified axis) must have length 3.
+        axis: Axis along which the spherical coordinates are stored. Defaults
+            to -1 if omitted.
+
+    Returns:
+        An array of Cartesian (x, y, z) coordinates with the same shape as lea.
+    """
+
     l, e, a = np.moveaxis(lea, axis, 0)
 
     xyz = np.empty_like(lea)
@@ -130,6 +155,7 @@ def spherical_to_xyz(lea: FloatArray, axis=-1) -> FloatArray:
 
 
 def gaussian(x, a, b, c, p=1):
+    """super-Gaussian function of order p"""
     return a * np.exp(-((((x - b) ** 2) / (2 * (c**2))) ** p))
 
 
@@ -139,6 +165,30 @@ def dfs_paths(
     visited: set[int] | None = None,
     path: list[T] | None = None,
 ) -> Generator[list[T]]:
+    """
+    Depth-first search (DFS) path generator for arbitrary graphs.
+
+    This function explores all simple acyclic paths starting from a
+    given node using depth-first search. It yields each path as a list
+    of nodes from the start node to a leaf (endpoint) where no further
+    unvisited neighbors exist.
+
+    Node identity is tracked using Python's built-in id(), rather
+    than using == (__eq__).
+
+    Args:
+        get_neighbors: A function that returns the neighbors of a node.
+        node: The starting node for the DFS.
+        visited: A set of visited node IDs (via `id(node)`) used
+            to avoid revisiting nodes. If None, a new set is created.
+        path: The current path of nodes being explored. If None, a new
+            path is started with the given node.
+
+    Yields:
+        A list of nodes representing one complete path, from the
+        starting node to a terminal node.
+    """
+
     if path is None:
         path = [node]
     if visited is None:
@@ -160,18 +210,27 @@ def dfs_paths(
 
 def color_float_to_ubyte(arr: FloatArray) -> UByteArray:
     """
-    Convert float colors in [0, 1] to uint8 in [0, 255].
-    Supports shape (..., 3) or (..., 4).
-    If RGB (last dim=3), appends alpha=255.
+    Convert floating-point RGB or RGBA colors to unsigned integer format.
+
+    Values are clamped to the range [0, 1], scaled to [0, 255], and returned
+    as uint8. If the input is RGB, an alpha channel with value 255 is appended.
+
+    Args:
+        arr: A array of floats representing colors in the range [0, 1].
+            The last dimension must be length 3 (RGB) or 4 (RGBA).
+
+    Returns:
+        An array of dtype uint8 with the same shape as `arr`, except that
+        RGB input is expanded to RGBA (last dimension has length 4).
     """
 
     if arr.shape[-1] not in (3, 4):
-        raise ValueError("Last dimension must be 3 (RGB) or 4 (RGBA)")
+        raise ValueError("Last dimension must be length 3 (RGB) or 4 (RGBA)")
 
-    # Avoid modifying caller's array
+    # avoid modifying caller's array
     arr = arr.copy()
 
-    # Clamp to [0, 1] and scale to [0, 255]
+    # clamp to [0, 1] and scale to [0, 255]
     np.clip(arr, 0.0, 1.0, out=arr)
     arr *= 255.0
 
@@ -189,16 +248,13 @@ def color_float_to_ubyte(arr: FloatArray) -> UByteArray:
 @dataclass(slots=True)
 class Frame:
     """
-    Frame: A frame of reference at a point.
-    A frame has an origin and 3 basis vectors, plus an approximate cumulative arc
-    length (used for texturing).
+    A frame of reference, with an origin and 3 basis vectors.
     """
 
     origin: FloatArray
     forward: FloatArray
     right: FloatArray
     up: FloatArray
-    arclength: float = 0.0
 
     def copy(self):
         return Frame(
@@ -206,11 +262,10 @@ class Frame:
             forward=np.copy(self.forward),
             right=np.copy(self.right),
             up=np.copy(self.up),
-            arclength=self.arclength,
         )
 
     def align(self, forward: FloatArray):
-        """Align frame to a forward vector"""
+        """Rotate the frame to align with a forward vector."""
 
         rot_axis = np.cross(self.forward, forward)
         axis_norm = np.linalg.norm(rot_axis)

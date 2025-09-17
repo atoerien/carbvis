@@ -18,19 +18,20 @@ classifiers = ["Development Status :: 3 - Alpha"]
 
 [tool.chimerax.command.paperchain]
 category = "General"
-description = "PaperChain description"
+synopsis = "Adds a PaperChain visualization to structures."
 
 [tool.chimerax.command.twister]
 category = "General"
-description = "Twister description"
+synopsis="Adds a Twister visualization to structures."
 
 [tool.chimerax.command.strand]
 category = "General"
-description = "Strand description"
+synopsis="Adds a Strand visualization to structures."
 
 [tool.chimerax.command."color bydihedral"]
 category = "General"
-description = "Color by dihedral description"
+synopsis="Color bonds by linkage dihedral angles."
+
 
 [tool.basedpyright]
 include = ["src"]

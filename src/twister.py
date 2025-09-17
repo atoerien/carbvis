@@ -29,6 +29,8 @@ def draw_hexagon(
     top_color: FloatArray,
     bottom_color: FloatArray,
 ):
+    """Draw a hexagon at an origin."""
+
     triangle_offset = len(vertices)
 
     # top centroid vertex
@@ -305,7 +307,6 @@ class TwisterModel(CarbVisModel):
                 # copy previous frame
                 frame = prev_frame.copy()
                 frame.origin = point
-                frame.arclength += np.linalg.norm(point - prev_frame.origin)
 
                 # align frame with tangent
                 frame.align(tangent)

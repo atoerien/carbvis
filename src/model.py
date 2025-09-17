@@ -26,9 +26,6 @@ class CarbVisModel(Model):
             name = f"{structure.name} CarbVis"
         super().__init__(name, session)
 
-        # TODO: what does this do?
-        # self.selection_coupled = atoms.unique_structures
-
         self.structure = structure
         self._atom_count = structure.num_atoms  # Used to check if atoms deleted
         self._bond_count = structure.num_bonds  # Used to check if bonds deleted
@@ -69,7 +66,12 @@ class CarbVisModel(Model):
         self._do_auto_update(changes)
 
     def _do_auto_update(self, changes: Changes):
-        # do nothing, override in subclasses
+        """
+        Called by a "changes" atomic trigger handler.
+
+        Subclasses can use this to recalculate graphics if the
+        structure has changed.
+        """
         pass
 
     def _structure_changed(self, changes: Changes):
@@ -104,7 +106,11 @@ class CarbVisModel(Model):
             self.calculate_graphics()
 
     def _calc_graphics(self):
-        # do nothing, override in subclasses
+        """
+        Called to recalculate the graphics of this model.
+
+        Does nothing, to be overridden in subclasses.
+        """
         pass
 
     def calculate_graphics(self):
@@ -139,6 +145,3 @@ class CarbVisModel(Model):
 
     def set_state_from_snapshot(self, session, data):
         Model.set_state_from_snapshot(self, session, data["model state"])
-
-    # TODO: make selection select the whole chain/ring/etc
-    # TODO: make hide/show work

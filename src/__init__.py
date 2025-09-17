@@ -25,6 +25,8 @@ class _CarbVisAPI(BundleAPI):
 
     @staticmethod
     def get_class(name: str):  # pyright: ignore[reportIncompatibleMethodOverride]
+        # needed for model save/restore
+
         if name == "CarbVisModel":
             from .model import CarbVisModel
 

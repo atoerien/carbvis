@@ -22,13 +22,13 @@ def make_texture(
     """
     Generate a procedural texture pattern.
 
-    Parameters:
-        formula: one of 'stripes', 'grid', 'diamond', 'rings', 'waves'
-        size: texture size in pixels (square)
-        period: pixel distance between repeating features
-        duty: fraction of each period that is 'off', [0, 1]
-        on_color: (R, G, B) array for 'on' pixels, [0, 255]
-        off_color: (R, G, B) tuple for 'off' pixels, [0, 255]
+    Args:
+        formula: One of 'stripes', 'grid', 'diamond', 'rings', 'waves'.
+        size: Texture size in pixels (square).
+        period: Pixel distance between repeating features.
+        duty: Fraction of each period that is 'off', [0, 1].
+        on_color: (R, G, B) array for 'on' pixels, [0, 255].
+        off_color: (R, G, B) tuple for 'off' pixels, [0, 255].
     """
 
     y, x = np.mgrid[0:size, 0:size]
@@ -57,6 +57,8 @@ def make_texture(
 
 
 def ring_tex(ring_coords: FloatArray, frame: Frame) -> FloatArray:
+    """Calculate ring texture coordinates."""
+
     n = len(ring_coords)
 
     # project coordinates down into the (forward, right) plane
@@ -149,6 +151,8 @@ class PaperChainModel(CarbVisModel):
             self._update_texture()
 
     def _update_texture(self):
+        """Regenerate and reload the texture."""
+
         on_color = np.full(3, 255, dtype=np.uint8)
         off_color = np.full(3, 128, dtype=np.uint8)
 
@@ -192,7 +196,7 @@ class PaperChainModel(CarbVisModel):
         rings = find_rings(self.structure, self.max_ring_size)
 
         for ring in rings:
-            n = len(ring.atoms)  # the number of atoms in the current ring
+            n = len(ring.atoms)
 
             color = paperchain_colormap(ring)
 
