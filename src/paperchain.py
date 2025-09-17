@@ -12,36 +12,24 @@ from .utils import FloatArray, Frame, UByteArray, color_float_to_ubyte, time
 
 
 def make_texture(
-    formula="stripes",
-    size=1024,
-    period=64,
-    duty=0.5,
-    on_color=255,
-    off_color=0,
+    formula: str,
+    size: int,
+    period: int,
+    duty: float,
+    on_color: UByteArray,
+    off_color: UByteArray,
 ) -> UByteArray:
     """
     Generate a procedural texture pattern.
 
     Parameters:
-        formula: one of
-            'stripes', 'grid', 'diamond',
-            'rings', 'waves'
+        formula: one of 'stripes', 'grid', 'diamond', 'rings', 'waves'
         size: texture size in pixels (square)
         period: pixel distance between repeating features
-        duty: fraction of each period that is 'off' (0.0-1.0)
-        on_color: int 0-255 or (R,G,B) tuple for 'on' pixels
-        off_color: int 0-255 or (R,G,B) tuple for 'off' pixels
+        duty: fraction of each period that is 'off', [0, 1]
+        on_color: (R, G, B) array for 'on' pixels, [0, 255]
+        off_color: (R, G, B) tuple for 'off' pixels, [0, 255]
     """
-
-    # allow int or tuple color
-    def to_rgb(c):
-        if isinstance(c, (tuple, list, np.ndarray)):
-            return np.array(c, dtype=np.uint8)
-        else:
-            return np.array((c, c, c), dtype=np.uint8)
-
-    on_rgb = to_rgb(on_color)
-    off_rgb = to_rgb(off_color)
 
     y, x = np.mgrid[0:size, 0:size]
     cx, cy = size // 2, size // 2
@@ -64,7 +52,7 @@ def make_texture(
     else:
         raise ValueError(f"Unknown formula '{formula}'")
 
-    tex = np.where(mask[..., None], off_rgb, on_rgb).astype(np.uint8)
+    tex = np.where(mask[..., None], off_color, on_color).astype(np.uint8)
     return tex
 
 
@@ -158,16 +146,28 @@ class PaperChainModel(CarbVisModel):
             self._update_texture()
 
     def _update_texture(self):
+        on_color = np.full(3, 255, dtype=np.uint8)
+        off_color = np.full(3, 128, dtype=np.uint8)
+
         if self.tex_formula is not None:
             tex = make_texture(
                 formula=self.tex_formula,
+                size=1024,
                 period=self.tex_period,
                 duty=self.tex_duty,
-                on_color=255,
-                off_color=128,
+                on_color=on_color,
+                off_color=off_color,
+            )
+
+            tex = np.concatenate(
+                (
+                    np.full((1024, 1024, 3), on_color, dtype=np.uint8),
+                    tex,
+                )
             )
         else:
-            tex = np.full((16, 16, 3), 255, dtype=np.uint8)
+            tex = np.full((32, 16, 3), on_color, dtype=np.uint8)
+
         self.texture.reload_texture(tex)
 
     def _do_auto_update(self, changes: Changes):
@@ -179,10 +179,6 @@ class PaperChainModel(CarbVisModel):
     @time
     def _calc_graphics(self):
         bipyramid_height = self.bipyramid_height
-
-        # NOTE: should point to a white part of the texture
-        # TODO: make this better
-        TOP_TEXTURE_COORD = (0.49, 0.49)
 
         vertices = []
         normals = []
@@ -210,12 +206,12 @@ class PaperChainModel(CarbVisModel):
             vertices.append(top)
             normals.append(frame.up)
             vcolors.append(color)
-            texcoords.append(TOP_TEXTURE_COORD)
+            texcoords.append((0.5, 0.25))
 
             vertices.append(bottom)
             normals.append(-frame.up)
             vcolors.append(color)
-            texcoords.append((0.5, 0.5))
+            texcoords.append((0.5, 0.75))
 
             for i in range(n):
                 # calculate next ring position (wrapping as necessary)
@@ -234,10 +230,14 @@ class PaperChainModel(CarbVisModel):
                 normbot = -np.cross(delta, curvec - bottom)
                 normbot /= np.linalg.norm(normbot)
 
+                texbase = tex[i]
+                textop = (texbase[0], texbase[1] / 2)
+                texbot = (texbase[0], texbase[1] / 2 + 0.5)
+
                 vertices.append(curvec)
                 normals.append(normtop)
                 vcolors.append(color)
-                texcoords.append(TOP_TEXTURE_COORD)
+                texcoords.append(textop)
 
                 triangles.append(
                     (
@@ -250,7 +250,7 @@ class PaperChainModel(CarbVisModel):
                 vertices.append(curvec)
                 normals.append(normbot)
                 vcolors.append(color)
-                texcoords.append(tex[i])
+                texcoords.append(texbot)
 
                 # order different to keep anticlockwise winding
                 triangles.append(
