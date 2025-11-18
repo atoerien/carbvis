@@ -134,6 +134,7 @@ class TwisterModel(CarbVisModel):
         start_end_centroid: bool,
         rib_steps: int,
         max_ring_size: int,
+        max_path_len: int,
         rib_width: float,
         rib_height: float,
         colormap: Callable[[CarbLinkage], FloatArray] | None,
@@ -146,6 +147,7 @@ class TwisterModel(CarbVisModel):
         self.start_end_centroid = start_end_centroid
         self.rib_steps = rib_steps
         self.max_ring_size = max_ring_size
+        self.max_path_len = max_path_len
         self.rib_width = rib_width
         self.rib_height = rib_height
         self.dihedral_colormap = colormap
@@ -158,6 +160,7 @@ class TwisterModel(CarbVisModel):
         start_end_centroid: bool,
         rib_steps: int,
         max_ring_size: int,
+        max_path_len: int,
         rib_width: float,
         rib_height: float,
         colormap: Callable[[CarbLinkage], FloatArray] | None,
@@ -175,6 +178,9 @@ class TwisterModel(CarbVisModel):
             clear_geometry = True
         if max_ring_size != self.max_ring_size:
             self.max_ring_size = max_ring_size
+            clear_geometry = True
+        if max_path_len != self.max_path_len:
+            self.max_path_len = max_path_len
             clear_geometry = True
         if rib_width != self.rib_width:
             self.rib_width = rib_width
@@ -208,7 +214,7 @@ class TwisterModel(CarbVisModel):
         gum_twist = self.gum_twist
 
         rings = find_rings(self.structure, self.max_ring_size)
-        linkages = find_linkages(rings)
+        linkages = find_linkages(rings, self.max_path_len)
 
         vertices = []
         normals = []
@@ -581,6 +587,7 @@ class TwisterModel(CarbVisModel):
             "start_end_centroid": self.start_end_centroid,
             "rib_steps": self.rib_steps,
             "max_ring_size": self.max_ring_size,
+            "max_path_len": self.max_path_len,
             "rib_width": self.rib_width,
             "rib_height": self.rib_height,
             "colormap": self.colormap,
@@ -602,6 +609,7 @@ class TwisterModel(CarbVisModel):
             start_end_centroid=data["start_end_centroid"],
             rib_steps=data["rib_steps"],
             max_ring_size=data["max_ring_size"],
+            max_path_len=data["max_path_len"],
             rib_width=data["rib_width"],
             rib_height=data["rib_height"],
             colormap=data["colormap"],

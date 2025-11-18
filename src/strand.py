@@ -375,6 +375,7 @@ class StrandModel(CarbVisModel):
         *,
         update: bool,
         max_ring_size: int,
+        max_path_len: int,
         radius: float,
         colormap: Callable[[CarbLinkage], FloatArray],
         candy_cane: bool,
@@ -386,6 +387,7 @@ class StrandModel(CarbVisModel):
         super().__init__(session, structure, name, update=update)
 
         self.max_ring_size = max_ring_size
+        self.max_path_len = max_path_len
         self.radius = radius
         self.dihedral_colormap = colormap
         self.candy_cane = candy_cane
@@ -397,6 +399,7 @@ class StrandModel(CarbVisModel):
         *,
         update: bool,
         max_ring_size: int,
+        max_path_len: int,
         radius: float,
         colormap: Callable[[CarbLinkage], FloatArray],
         candy_cane: bool,
@@ -409,6 +412,9 @@ class StrandModel(CarbVisModel):
         clear_geometry = False
         if max_ring_size != self.max_ring_size:
             self.max_ring_size = max_ring_size
+            clear_geometry = True
+        if max_path_len != self.max_path_len:
+            self.max_path_len = max_path_len
             clear_geometry = True
         if radius != self.radius:
             self.radius = radius
@@ -444,7 +450,7 @@ class StrandModel(CarbVisModel):
         sphere_colormap = self.sphere_colormap
 
         rings = find_rings(self.structure, self.max_ring_size)
-        linkages = find_linkages(rings)
+        linkages = find_linkages(rings, self.max_path_len)
 
         vertices = []
         normals = []
@@ -537,6 +543,7 @@ class StrandModel(CarbVisModel):
             "name": self.name,
             "update": self.auto_update,
             "max_ring_size": self.max_ring_size,
+            "max_path_len": self.max_path_len,
             "radius": self.radius,
             "colormap": self.colormap,
             "candy_cane": self.candy_cane,
@@ -557,6 +564,7 @@ class StrandModel(CarbVisModel):
             data["name"],
             update=data["update"],
             max_ring_size=data["max_ring_size"],
+            max_path_len=data["max_path_len"],
             radius=data["radius"],
             colormap=data["colormap"],
             candy_cane=data["candy_cane"],

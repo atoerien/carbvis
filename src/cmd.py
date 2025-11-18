@@ -161,6 +161,7 @@ def paperchain(
         ("start_end_centroid", BoolArg),
         ("rib_steps", IntArg),
         ("max_ring_size", IntArg),
+        ("max_path_len", IntArg),
         ("rib_width", FloatArg),
         ("rib_height", FloatArg),
         ("colormap", EnumOf(("default", "norm"))),
@@ -176,6 +177,7 @@ def twister(
     start_end_centroid=True,
     rib_steps=10,
     max_ring_size=10,
+    max_path_len=5,
     rib_width=0.3,
     rib_height=0.05,
     colormap=None,
@@ -193,6 +195,7 @@ def twister(
             at the centroid of each ring.
         rib_steps: The number of steps used when rendering each ribbon.
         max_ring_size: A ring size limit when finding rings.
+        max_path_len: A path length limit when finding linkages.
         rib_width: The ribbon width.
         rib_height: The ribbon height.
         colormap: Specify to use a colormap to set the ribbon color.
@@ -229,6 +232,7 @@ def twister(
                 start_end_centroid=start_end_centroid,
                 rib_steps=rib_steps,
                 max_ring_size=max_ring_size,
+                max_path_len=max_path_len,
                 rib_width=rib_width,
                 rib_height=rib_height,
                 colormap=colormap,
@@ -241,6 +245,7 @@ def twister(
                 start_end_centroid=start_end_centroid,
                 rib_steps=rib_steps,
                 max_ring_size=max_ring_size,
+                max_path_len=max_path_len,
                 rib_width=rib_width,
                 rib_height=rib_height,
                 colormap=colormap,
@@ -268,6 +273,7 @@ def twister(
         ("replace", BoolArg),
         ("update", BoolArg),
         ("max_ring_size", IntArg),
+        ("max_path_len", IntArg),
         ("radius", FloatArg),
         ("colormap", EnumOf(("default", "norm"))),
         ("candy_cane", BoolArg),
@@ -282,6 +288,7 @@ def strand(
     replace=True,
     update=True,
     max_ring_size=10,
+    max_path_len=5,
     radius=0.75,
     colormap="default",
     candy_cane=False,
@@ -297,6 +304,7 @@ def strand(
         update: Whether to automatically update the model if the
             structure changes.
         max_ring_size: A ring size limit when finding rings.
+        max_path_len: A path length limit when finding linkages.
         radius: The radius of the tubes.
         colormap: The colormap used to set the tube color.
         candy_cane: Whether to enable the Candy Cane variant.
@@ -339,6 +347,7 @@ def strand(
                 structure,
                 update=update,
                 max_ring_size=max_ring_size,
+                max_path_len=max_path_len,
                 radius=radius,
                 colormap=colormap,
                 candy_cane=candy_cane,
@@ -350,6 +359,7 @@ def strand(
             model.update_params(
                 update=update,
                 max_ring_size=max_ring_size,
+                max_path_len=max_path_len,
                 radius=radius,
                 colormap=colormap,
                 candy_cane=candy_cane,
@@ -375,24 +385,27 @@ def strand(
 @cmd(
     required=[("bonds", Or(BondsArg, EmptyArg))],
     keyword=[
-        ("max_ring_size", IntArg),
         ("colormap", EnumOf(("default", "norm"))),
+        ("max_ring_size", IntArg),
+        ("max_path_len", IntArg),
     ],
     synopsis="Color bonds by linkage dihedral angles.",
 )
 def color_bydihedral(
     session: Session,
     bonds: Bonds | None,
-    max_ring_size=10,
     colormap="default",
+    max_ring_size=10,
+    max_path_len=5,
 ):
     """
     Color bonds by linkage dihedral angles.
 
     Args:
         bonds: The bonds to color.
-        max_ring_size: A ring size limit when finding rings.
         colormap: The colormap to use. One of 'default' or 'norm'.
+        max_ring_size: A ring size limit when finding rings.
+        max_path_len: A path length limit when finding linkages.
     """
 
     if bonds is None:
@@ -405,7 +418,12 @@ def color_bydihedral(
     else:
         raise ValueError(f"{colormap!r} is not a valid color map name")
 
-    color_linkage_bonds(bonds, max_ring_size, colormap)
+    color_linkage_bonds(
+        bonds,
+        colormap,
+        max_ring_size=max_ring_size,
+        max_path_len=max_path_len,
+    )
 
 
 def check_structures(structures: Structures | None, session: Session) -> Structures:

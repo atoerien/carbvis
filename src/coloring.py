@@ -9,8 +9,10 @@ from .utils import FloatArray, color_float_to_ubyte
 
 def color_linkage_bonds(
     bonds: Bonds,
-    max_ring_size: int,
     colormap: Callable[[CarbLinkage], FloatArray],
+    *,
+    max_ring_size: int,
+    max_path_len: int,
 ):
     """
     Set the color of linkage bonds using a colormap.
@@ -18,6 +20,7 @@ def color_linkage_bonds(
     Args:
         bonds: The bonds to color.
         max_ring_size: A ring size limit when finding rings.
+        max_path_len: A path length limit when finding linkages.
         colormap: The colormap to use, mapping a CarbLinkage to an
             RGB [0, 1] float array.
     """
@@ -25,8 +28,8 @@ def color_linkage_bonds(
     for structure, bonds in bonds.by_structure:
         structure: Structure
 
-        rings = find_rings(structure, max_ring_size)
-        linkages = find_linkages(rings)
+        rings = find_rings(structure.atoms, max_ring_size)
+        linkages = find_linkages(rings, max_path_len)
 
         for link in linkages:
             color = color_float_to_ubyte(colormap(link))

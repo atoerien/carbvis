@@ -164,6 +164,8 @@ def dfs_paths(
     node: T,
     visited: set[int] | None = None,
     path: list[T] | None = None,
+    *,
+    max_len: int = 0,
 ) -> Generator[list[T]]:
     """
     Depth-first search (DFS) path generator for arbitrary graphs.
@@ -183,6 +185,7 @@ def dfs_paths(
             to avoid revisiting nodes. If None, a new set is created.
         path: The current path of nodes being explored. If None, a new
             path is started with the given node.
+        max_len: The maximum path length. If 0, no limit.
 
     Yields:
         A list of nodes representing one complete path, from the
@@ -198,9 +201,20 @@ def dfs_paths(
     for neighbor in get_neighbors(node):
         id_neighbor = id(neighbor)
         if id_neighbor not in visited:
+            # we're at the max len and we have a neighbor,
+            # this path is invalid and we can return early
+            if max_len == 1:
+                return
+
             path.append(neighbor)
             visited.add(id_neighbor)
-            yield from dfs_paths(get_neighbors, neighbor, visited, path)
+            yield from dfs_paths(
+                get_neighbors,
+                neighbor,
+                visited,
+                path,
+                max_len=max_len - 1,
+            )
             visited.remove(id_neighbor)
             path.pop()
             extended = True

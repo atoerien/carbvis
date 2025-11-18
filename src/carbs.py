@@ -296,8 +296,9 @@ def find_rings(structure: Structure, max_size: int) -> list[CarbRing]:
     return rings
 
 
-def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
-    """Find all linkages between the rings."""
+@time
+def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
+    """Find all linkages between the rings, with maximum length max_len."""
 
     atom_to_ring: dict[Atom, CarbRing] = {}
     multi_ring_atoms: set[Atom] = set()
@@ -340,7 +341,12 @@ def find_linkages(rings: list[CarbRing]) -> list[CarbLinkage]:
                 continue
             visited.add(id_start_atom)
 
-            for linkage in dfs_paths(get_neighbors, start_atom, visited):
+            for linkage in dfs_paths(
+                get_neighbors,
+                start_atom,
+                visited,
+                max_len=max_len,
+            ):
                 end_atom = linkage[-1]
                 if start_atom is end_atom:
                     continue
