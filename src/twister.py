@@ -561,7 +561,9 @@ class TwisterModel(CarbVisModel):
         self.set_geometry(va, na, ta)
         self.set_vertex_colors(color_float_to_ubyte(ca))
 
-    _save_attrs = (
+    # these attrs will all be recalculated on restore if auto-updating,
+    # so we don't need to save them if auto_update is not set
+    _save_noauto_attrs = (
         "vertices",
         "normals",
         "triangles",
@@ -583,8 +585,9 @@ class TwisterModel(CarbVisModel):
             "gum_twist": self.gum_twist,
         }
         data["model state"] = Model.take_snapshot(self, session, flags)
-        for attr in self._save_attrs:
-            data[attr] = getattr(self, attr)
+        if not self.auto_update:
+            for attr in self._save_noauto_attrs:
+                data[attr] = getattr(self, attr)
         data["version"] = TWISTER_STATE_VERSION
         return data
 
@@ -609,9 +612,8 @@ class TwisterModel(CarbVisModel):
 
     def set_state_from_snapshot(self, session, data):
         Model.set_state_from_snapshot(self, session, data["model state"])
-
-        geom_attrs = ("vertices", "normals", "triangles")
-        self.set_geometry(data["vertices"], data["normals"], data["triangles"])
-        for attr in TwisterModel._save_attrs:
-            if attr not in geom_attrs:
+        if not self.auto_update:
+            # need to do vertices, normals, triangles first
+            self.set_geometry(data["vertices"], data["normals"], data["triangles"])
+            for attr in self._save_noauto_attrs[3:]:
                 setattr(self, attr, data[attr])

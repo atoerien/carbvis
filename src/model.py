@@ -59,7 +59,7 @@ class CarbVisModel(Model):
         if enable and h is None:
             t = get_triggers()
             self._auto_update_handler = t.add_handler("changes", self._auto_update_cb)
-        elif not enable and h:
+        elif not enable and h is not None:
             t = get_triggers()
             t.remove_handler(h)
             self._auto_update_handler = None
