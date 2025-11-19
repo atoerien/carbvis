@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 from chimerax.atomic import Atoms
-from chimerax.atomic.changes import Changes
 from chimerax.core.models import Model
 from chimerax.core.session import Session
 from chimerax.graphics import Texture
 
-from .carbs import find_rings, paperchain_colormap
+from .carbs import CarbRing, find_rings, paperchain_colormap
 from .model import CarbVisModel
 from .utils import FloatArray, Frame, UByteArray, color_float_to_ubyte, time
 
@@ -106,6 +105,8 @@ class PaperChainModel(CarbVisModel):
         self.bipyramid_height = bipyramid_height
         self.max_ring_size = max_ring_size
 
+        self.rings: list[CarbRing] | None = None
+
         self.texture: Texture = Texture(linear_interpolation=True)
         self.tex_formula = tex_formula
         self.tex_period = tex_period
@@ -122,32 +123,18 @@ class PaperChainModel(CarbVisModel):
         tex_period: int,
         tex_duty: float,
     ):
-        if update != self.auto_update:
-            self.auto_update = update
+        self.auto_update = update
 
-        clear_geometry = False
-        if bipyramid_height != self.bipyramid_height:
-            self.bipyramid_height = bipyramid_height
-            clear_geometry = True
-        if max_ring_size != self.max_ring_size:
-            self.max_ring_size = max_ring_size
-            clear_geometry = True
+        self.bipyramid_height = bipyramid_height
+        self.max_ring_size = max_ring_size
 
-        update_texture = False
-        if tex_formula != self.tex_formula:
-            self.tex_formula = tex_formula
-            update_texture = True
-        if tex_period != self.tex_period:
-            self.tex_period = tex_period
-            update_texture = True
-        if tex_duty != self.tex_duty:
-            self.tex_duty = tex_duty
-            update_texture = True
+        self.tex_formula = tex_formula
+        self.tex_period = tex_period
+        self.tex_duty = tex_duty
+        self._update_texture()
 
-        if clear_geometry:
-            self._clear_geometry()
-        if update_texture:
-            self._update_texture()
+        self.rings = None
+        self._clear_geometry()
 
     def _update_texture(self):
         """Regenerate and reload the texture."""
@@ -176,11 +163,21 @@ class PaperChainModel(CarbVisModel):
 
         self.texture.reload_texture(tex)
 
-    def _do_auto_update(self, changes: Changes):
-        super()._do_auto_update(changes)
+    def _do_update(self, *, structure_changed, coords_changed):
+        if structure_changed or self.rings is None:
+            self._calc_rings()
+        if coords_changed or self.vertices is None:
+            self._calc_graphics()
 
-        if self._structure_changed(changes):
-            self._recalculate_graphics()
+    @time
+    def _calc_rings(self):
+        rings = find_rings(self.atoms, self.max_ring_size)
+
+        if self.rings != rings:
+            self.rings = rings
+            self.selected_rings = np.full(len(rings), False)
+            # self.update_selection()
+            self._clear_geometry()
 
     @time
     def _calc_graphics(self):
@@ -192,9 +189,8 @@ class PaperChainModel(CarbVisModel):
         vcolors = []
         texcoords = []
 
-        rings = find_rings(self.atoms, self.max_ring_size)
-
-        for ring in rings:
+        assert self.rings is not None
+        for ring in self.rings:
             n = len(ring.atoms)
 
             color = paperchain_colormap(ring)
@@ -220,10 +216,7 @@ class PaperChainModel(CarbVisModel):
             texcoords.append((0.5, 0.75))
 
             for i in range(n):
-                # calculate next ring position (wrapping as necessary)
-                next_i = i + 1
-                if next_i >= n:
-                    next_i = 0
+                next_i = (i + 1) % n
 
                 curvec = ring_coords[i]
                 nextvec = ring_coords[next_i]

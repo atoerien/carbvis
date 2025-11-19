@@ -5,7 +5,7 @@ import numpy as np
 from chimerax.atomic import Atom, Atoms, Element, Residue, Residues, Ring
 from chimerax.geometry import dihedral
 
-from .utils import FloatArray, Frame, dfs_paths, gaussian
+from .utils import FloatArray, Frame, dfs_paths, gaussian, time
 
 
 @dataclass
@@ -285,6 +285,7 @@ class CarbLinkage:
         return angles
 
 
+@time
 def find_rings(atoms: Atoms, max_size: int) -> list[CarbRing]:
     """Find all rings in atoms, with maximum size max_size."""
 
@@ -299,6 +300,7 @@ def find_rings(atoms: Atoms, max_size: int) -> list[CarbRing]:
     return rings
 
 
+@time
 def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
     """Find all linkages between the rings, with maximum length max_len."""
 

@@ -141,7 +141,7 @@ def paperchain(
             )
             new = False
 
-        model.calculate_graphics()
+        model.update()
 
         if new:
             if replace:
@@ -265,7 +265,7 @@ def twister(
             )
             new = False
 
-        model.calculate_graphics()
+        model.update()
 
         if new:
             if replace:
@@ -390,7 +390,7 @@ def strand(
             )
             new = False
 
-        model.calculate_graphics()
+        model.update()
 
         if new:
             if replace:

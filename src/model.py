@@ -1,5 +1,6 @@
-import numpy as np
-from chimerax.atomic import Structure, get_triggers
+from typing import cast
+
+from chimerax.atomic import Atoms, Structure, Structures, get_triggers
 from chimerax.atomic.changes import Changes
 from chimerax.core.models import Model
 from chimerax.core.session import Session
@@ -32,8 +33,10 @@ class CarbVisModel(Model):
         self.atoms = atoms
         self.structure = structure
 
-        self._atom_count = len(atoms)  # Used to check if atoms deleted
-        self._bond_count = len(atoms.bonds)  # Used to check if bonds deleted
+        # change tracking stuff
+        self._atom_count = len(atoms)
+        self._bonds = atoms.bonds
+        self._bond_count = len(atoms.bonds)
 
         self._auto_update_handler = None
         self.auto_update = update
@@ -43,9 +46,7 @@ class CarbVisModel(Model):
         super().delete()
 
     def _clear_geometry(self):
-        va = na = np.empty((0, 3), np.float32)
-        ta = np.empty((0, 3), np.int32)
-        self.set_geometry(va, na, ta)
+        self.set_geometry(None, None, None)
         self.texture_coordinates = None
 
     @property
@@ -58,8 +59,6 @@ class CarbVisModel(Model):
         if enable and h is None:
             t = get_triggers()
             self._auto_update_handler = t.add_handler("changes", self._auto_update_cb)
-            if self.vertices is not None:
-                self._recalculate_graphics()
         elif not enable and h:
             t = get_triggers()
             t.remove_handler(h)
@@ -68,64 +67,84 @@ class CarbVisModel(Model):
     def _auto_update_cb(self, trigger_name, changes: Changes):
         if self.deleted or self.structure.deleted:
             return "delete handler"
-        self._do_auto_update(changes)
 
-    def _do_auto_update(self, changes: Changes):
+        structure_changed = self._structure_changed(changes)
+        coords_changed = self._coords_changed(changes)
+        self._do_update(
+            structure_changed=structure_changed,
+            coords_changed=coords_changed,
+        )
+
+    def _do_update(
+        self,
+        *,
+        structure_changed: bool,
+        coords_changed: bool,
+    ):
         """
-        Called by a "changes" atomic trigger handler.
-
-        Subclasses can use this to recalculate graphics if the
-        structure has changed.
-        """
-        pass
-
-    def _structure_changed(self, changes: Changes):
-        """Check whether the atoms or bonds in the structure changed"""
-
-        structure = self.structure
-        if structure.num_atoms != self._atom_count:
-            self._atom_count = structure.num_atoms
-            # bond count might also have changed
-            self._bond_count = structure.num_bonds
-            return True
-        if structure.num_bonds != self._bond_count:
-            self._bond_count = structure.num_bonds
-            return True
-        if "active_coordset changed" in changes.structure_reasons():
-            # Active coord set index changed.  Playing a trajectory.
-            for s in changes.modified_structures():
-                if s == self.structure:
-                    return True
-        if "coordset changed" in changes.coordset_reasons():
-            # Atom coordinates changed through CoordSet object.
-            for cs in changes.modified_coordsets():
-                if cs.structure == self.structure:
-                    return True
-        return False
-
-    def _recalculate_graphics(self):
-        if self.structure.num_atoms == 0:
-            self.session.models.close([self])
-        else:
-            self._clear_geometry()
-            self.calculate_graphics()
-
-    def _calc_graphics(self):
-        """
-        Called to recalculate the graphics of this model.
+        Called to update this model.
 
         Does nothing, to be overridden in subclasses.
+
+        Args:
+            structure_changed: If `True`, the atoms or bonds in the
+                structure have changed.
+            coords_changed: If `True`, the atom coordinates changed.
         """
-        pass
 
-    def calculate_graphics(self):
-        """Recalculate the geometry and color if parameters have been changed."""
+    def update(self):
+        """Update this model"""
 
-        if self.vertices is not None and len(self.vertices) > 0:
-            # Geometry already computed
-            return
+        structure_changed = self._structure_changed()
+        coords_changed = self._coords_changed()
+        self._do_update(
+            structure_changed=structure_changed,
+            coords_changed=coords_changed,
+        )
 
-        self._calc_graphics()
+    def _structure_changed(self, changes: Changes | None = None):
+        """Check whether the atoms or bonds in the structure have changed"""
+
+        atoms = self.atoms
+        bonds = atoms.bonds
+        if len(atoms) != self._atom_count:
+            # we never assign to self.atoms, so since it's "immutable"
+            # we only need to check if atoms were deleted
+            self._atom_count = len(atoms)
+            self._bonds = bonds
+            self._bond_count = len(bonds)
+            return True
+        if len(bonds) != self._bond_count or bonds != self._bonds:
+            # bonds on the other hand could have changed in any way
+            # check for length as well because deleted bonds will be
+            # removed from self._bonds as well
+            self._bonds = bonds
+            self._bond_count = len(bonds)
+            return True
+        return False
+
+    def _coords_changed(self, changes: Changes | None = None):
+        """Check whether the structure's atom coordinates changed"""
+
+        if changes is not None:
+            if "active_coordset changed" in changes.structure_reasons():
+                # playing a trajectory
+                for s in changes.modified_structures():
+                    if s == self.structure:
+                        return True
+            if "coord changed" in changes.atom_reasons():
+                # atom coordinates changed through Atom or Atoms set_coord()
+                if self.atoms.intersects(changes.modified_atoms()):
+                    return True
+            elif "coordset changed" in changes.coordset_reasons():
+                # atom coordinates changed through CoordSet
+                for cs in changes.modified_coordsets():
+                    if cs.structure == self.structure:
+                        return True
+        else:
+            # TODO: detect? hash the array? make sure not slow
+            return True
+        return False
 
     def take_snapshot(self, session: Session, flags: int):
         data = {

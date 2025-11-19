@@ -4,7 +4,6 @@ from typing import Callable
 
 import numpy as np
 from chimerax.atomic import Atoms
-from chimerax.atomic.changes import Changes
 from chimerax.core.models import Model
 from chimerax.core.session import Session
 
@@ -393,6 +392,8 @@ class StrandModel(CarbVisModel):
         self.sphere_radius = sphere_radius
         self.sphere_colormap = sphere_colormap
 
+        self.linkages: list[CarbLinkage] | None = None
+
     def update_params(
         self,
         *,
@@ -405,40 +406,33 @@ class StrandModel(CarbVisModel):
         sphere_radius: float,
         sphere_colormap: Callable[[CarbRing], FloatArray] | None,
     ):
-        if update != self.auto_update:
-            self.auto_update = update
+        self.auto_update = update
 
-        clear_geometry = False
-        if max_ring_size != self.max_ring_size:
-            self.max_ring_size = max_ring_size
-            clear_geometry = True
-        if max_path_len != self.max_path_len:
-            self.max_path_len = max_path_len
-            clear_geometry = True
-        if radius != self.radius:
-            self.radius = radius
-            clear_geometry = True
-        if colormap != self.dihedral_colormap:
-            self.dihedral_colormap = colormap
-            clear_geometry = True
-        if candy_cane != self.candy_cane:
-            self.candy_cane = candy_cane
-            clear_geometry = True
-        if sphere_radius != self.sphere_radius:
-            self.sphere_radius = sphere_radius
-            clear_geometry = True
-        if sphere_colormap != self.sphere_colormap:
-            self.sphere_colormap = sphere_colormap
-            clear_geometry = True
+        self.max_ring_size = max_ring_size
+        self.max_path_len = max_path_len
+        self.radius = radius
+        self.dihedral_colormap = colormap
+        self.candy_cane = candy_cane
+        self.sphere_radius = sphere_radius
+        self.sphere_colormap = sphere_colormap
 
-        if clear_geometry:
+        self.linkages = None
+        self._clear_geometry()
+
+    def _do_update(self, *, structure_changed, coords_changed):
+        if structure_changed or self.linkages is None:
+            self._calc_linkages()
+        if coords_changed or self.vertices is None:
+            self._calc_graphics()
+
+    @time
+    def _calc_linkages(self):
+        rings = find_rings(self.atoms, self.max_ring_size)
+        linkages = find_linkages(rings, self.max_path_len)
+
+        if self.linkages != linkages:
+            self.linkages = linkages
             self._clear_geometry()
-
-    def _do_auto_update(self, changes: Changes):
-        super()._do_auto_update(changes)
-
-        if self._structure_changed(changes):
-            self._recalculate_graphics()
 
     @time
     def _calc_graphics(self):
@@ -447,9 +441,6 @@ class StrandModel(CarbVisModel):
         candy_cane = self.candy_cane
         sphere_radius = self.sphere_radius
         sphere_colormap = self.sphere_colormap
-
-        rings = find_rings(self.atoms, self.max_ring_size)
-        linkages = find_linkages(rings, self.max_path_len)
 
         vertices = []
         normals = []
@@ -466,7 +457,8 @@ class StrandModel(CarbVisModel):
             tuple[CarbRing, FloatArray, list[int], list[FloatArray]],
         ] = {}
 
-        for link in linkages:
+        assert self.linkages is not None
+        for link in self.linkages:
             color_a = colormap(link)
 
             draw_tube(
