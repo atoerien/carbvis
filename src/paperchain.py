@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import numpy as np
-from chimerax.atomic import Structure
+from chimerax.atomic import Atoms
 from chimerax.atomic.changes import Changes
+from chimerax.core.models import Model
 from chimerax.core.session import Session
 from chimerax.graphics import Texture
 
@@ -90,8 +91,8 @@ class PaperChainModel(CarbVisModel):
     def __init__(
         self,
         session: Session,
-        structure: Structure,
-        name: str | None = None,
+        atoms: Atoms,
+        name: str,
         *,
         update: bool,
         bipyramid_height: float,
@@ -100,9 +101,7 @@ class PaperChainModel(CarbVisModel):
         tex_period: int,
         tex_duty: float,
     ):
-        if name is None:
-            name = f"{structure.name} PaperChain"
-        super().__init__(session, structure, name, update=update)
+        super().__init__(session, atoms, name, update=update)
 
         self.bipyramid_height = bipyramid_height
         self.max_ring_size = max_ring_size
@@ -193,7 +192,7 @@ class PaperChainModel(CarbVisModel):
         vcolors = []
         texcoords = []
 
-        rings = find_rings(self.structure, self.max_ring_size)
+        rings = find_rings(self.atoms, self.max_ring_size)
 
         for ring in rings:
             n = len(ring.atoms)
@@ -288,7 +287,7 @@ class PaperChainModel(CarbVisModel):
 
     def take_snapshot(self, session: Session, flags: int):
         data = {
-            "structure": self.structure,
+            "atoms": self.atoms,
             "name": self.name,
             "update": self.auto_update,
             "bipyramid_height": self.bipyramid_height,
@@ -297,7 +296,7 @@ class PaperChainModel(CarbVisModel):
             "tex_period": self.tex_period,
             "tex_duty": self.tex_duty,
         }
-        data["model state"] = CarbVisModel.take_snapshot(self, session, flags)
+        data["model state"] = Model.take_snapshot(self, session, flags)
         for attr in self._save_attrs:
             data[attr] = getattr(self, attr)
         data["version"] = PAPERCHAIN_STATE_VERSION
@@ -307,7 +306,7 @@ class PaperChainModel(CarbVisModel):
     def restore_snapshot(cls, session: Session, data: dict):
         ret = PaperChainModel(
             session,
-            data["structure"],
+            data["atoms"],
             data["name"],
             update=data["update"],
             bipyramid_height=data["bipyramid_height"],
@@ -320,7 +319,7 @@ class PaperChainModel(CarbVisModel):
         return ret
 
     def set_state_from_snapshot(self, session, data):
-        CarbVisModel.set_state_from_snapshot(self, session, data["model state"])
+        Model.set_state_from_snapshot(self, session, data["model state"])
 
         geom_attrs = ("vertices", "normals", "triangles")
         self.set_geometry(data["vertices"], data["normals"], data["triangles"])

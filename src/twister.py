@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
-from chimerax.atomic import Structure
+from chimerax.atomic import Atoms
 from chimerax.atomic.changes import Changes
+from chimerax.core.models import Model
 from chimerax.core.session import Session
 
 from .carbs import CarbLinkage, find_linkages, find_rings
@@ -127,8 +128,8 @@ class TwisterModel(CarbVisModel):
     def __init__(
         self,
         session: Session,
-        structure: Structure,
-        name: str | None = None,
+        atoms: Atoms,
+        name: str,
         *,
         update: bool,
         start_end_centroid: bool,
@@ -140,9 +141,7 @@ class TwisterModel(CarbVisModel):
         colormap: Callable[[CarbLinkage], FloatArray] | None,
         gum_twist: bool,
     ):
-        if name is None:
-            name = f"{structure.name} Twister"
-        super().__init__(session, structure, name, update=update)
+        super().__init__(session, atoms, name, update=update)
 
         self.start_end_centroid = start_end_centroid
         self.rib_steps = rib_steps
@@ -213,7 +212,7 @@ class TwisterModel(CarbVisModel):
         colormap = self.dihedral_colormap
         gum_twist = self.gum_twist
 
-        rings = find_rings(self.structure, self.max_ring_size)
+        rings = find_rings(self.atoms, self.max_ring_size)
         linkages = find_linkages(rings, self.max_path_len)
 
         vertices = []
@@ -581,7 +580,7 @@ class TwisterModel(CarbVisModel):
 
     def take_snapshot(self, session: Session, flags: int):
         data = {
-            "structure": self.structure,
+            "atoms": self.atoms,
             "name": self.name,
             "update": self.auto_update,
             "start_end_centroid": self.start_end_centroid,
@@ -593,7 +592,7 @@ class TwisterModel(CarbVisModel):
             "colormap": self.colormap,
             "gum_twist": self.gum_twist,
         }
-        data["model state"] = CarbVisModel.take_snapshot(self, session, flags)
+        data["model state"] = Model.take_snapshot(self, session, flags)
         for attr in self._save_attrs:
             data[attr] = getattr(self, attr)
         data["version"] = TWISTER_STATE_VERSION
@@ -603,7 +602,7 @@ class TwisterModel(CarbVisModel):
     def restore_snapshot(cls, session: Session, data: dict):
         ret = TwisterModel(
             session,
-            data["structure"],
+            data["atoms"],
             data["name"],
             update=data["update"],
             start_end_centroid=data["start_end_centroid"],
@@ -619,7 +618,7 @@ class TwisterModel(CarbVisModel):
         return ret
 
     def set_state_from_snapshot(self, session, data):
-        CarbVisModel.set_state_from_snapshot(self, session, data["model state"])
+        Model.set_state_from_snapshot(self, session, data["model state"])
 
         geom_attrs = ("vertices", "normals", "triangles")
         self.set_geometry(data["vertices"], data["normals"], data["triangles"])

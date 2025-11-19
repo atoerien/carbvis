@@ -15,20 +15,25 @@ class CarbVisModel(Model):
     def __init__(
         self,
         session: Session,
-        structure: Structure,
-        name: str | None = None,
+        atoms: Atoms,
+        name: str,
         *,
         update: bool,
     ):
         self.session: Session
 
-        if name is None:
-            name = f"{structure.name} CarbVis"
+        structures: Structures = atoms.unique_structures
+        if len(structures) != 1:
+            raise ValueError("Atoms must belong to one structure")
+        structure = cast(Structure, structures[0])
+
         super().__init__(name, session)
 
+        self.atoms = atoms
         self.structure = structure
-        self._atom_count = structure.num_atoms  # Used to check if atoms deleted
-        self._bond_count = structure.num_bonds  # Used to check if bonds deleted
+
+        self._atom_count = len(atoms)  # Used to check if atoms deleted
+        self._bond_count = len(atoms.bonds)  # Used to check if bonds deleted
 
         self._auto_update_handler = None
         self.auto_update = update
@@ -124,7 +129,7 @@ class CarbVisModel(Model):
 
     def take_snapshot(self, session: Session, flags: int):
         data = {
-            "structure": self.structure,
+            "atoms": self.atoms,
             "name": self.name,
             "update": self.auto_update,
         }
@@ -136,7 +141,7 @@ class CarbVisModel(Model):
     def restore_snapshot(cls, session: Session, data: dict):
         ret = CarbVisModel(
             session,
-            data["structure"],
+            data["atoms"],
             data["name"],
             update=data["update"],
         )

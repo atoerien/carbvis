@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Iterator, Self
 
 import numpy as np
-from chimerax.atomic import Atom, Atoms, Element, Residue, Residues, Ring, Structure
+from chimerax.atomic import Atom, Atoms, Element, Residue, Residues, Ring
 from chimerax.geometry import dihedral
 
 from .utils import FloatArray, Frame, dfs_paths, gaussian
@@ -97,7 +97,7 @@ class CarbRing:
         # leave unorientated if the C1 carbon can't be found
         if atom_before_O.name in ("C1", "C1'", "C_1", "C2", "C2'", "C_2"):
             # reverse atom list, while keeping the first atom in the same place
-            ptrs = self.atoms.pointers
+            ptrs = self.atoms.pointers.copy()
             ptrs[1:] = np.flip(ptrs[1:])
             self.atoms = Atoms(ptrs)
             self.orientated = True
@@ -285,18 +285,20 @@ class CarbLinkage:
         return angles
 
 
-def find_rings(structure: Structure, max_size: int) -> list[CarbRing]:
-    """Find all rings in structure, with maximum size max_size."""
+def find_rings(atoms: Atoms, max_size: int) -> list[CarbRing]:
+    """Find all rings in atoms, with maximum size max_size."""
 
     rings = [
         CarbRing.from_ring(ring)
+        for structure, structure_atoms in atoms.by_structure
         for ring in structure.rings(cross_residue=False, all_size_threshold=max_size)
+        # all ring atoms must be present in selected atoms
+        if len(ring.atoms - structure_atoms) == 0
     ]
     # print(f"RINGS: {len(rings)}")
     return rings
 
 
-@time
 def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
     """Find all linkages between the rings, with maximum length max_len."""
 

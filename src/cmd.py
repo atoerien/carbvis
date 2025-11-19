@@ -1,7 +1,7 @@
 from typing import Callable, ParamSpec, Protocol, TypeVar, cast
 
-from chimerax.atomic import Bonds, Structure, Structures, all_bonds, all_structures
-from chimerax.atomic.args import BondsArg, StructuresArg
+from chimerax.atomic import Atoms, Bonds, all_atoms, all_bonds
+from chimerax.atomic.args import AtomsArg, BondsArg
 from chimerax.core.commands import (
     BoolArg,
     CmdDesc,
@@ -16,7 +16,6 @@ from chimerax.core.session import Session
 
 from .carbs import dihedral_colormap, dihedral_norm_colormap, paperchain_colormap
 from .coloring import color_linkage_bonds
-from .model import CarbVisModel
 from .paperchain import PaperChainModel
 from .strand import StrandModel
 from .twister import TwisterModel
@@ -65,7 +64,7 @@ def cmd(
 
 
 @cmd(
-    optional=[("structures", StructuresArg)],
+    optional=[("atoms", AtomsArg)],
     keyword=[
         ("replace", BoolArg),
         ("update", BoolArg),
@@ -79,7 +78,7 @@ def cmd(
 )
 def paperchain(
     session: Session,
-    structures: Structures | None = None,
+    atoms: Atoms | None = None,
     replace=True,
     update=True,
     bipyramid_height=1.0,
@@ -104,22 +103,25 @@ def paperchain(
         tex_duty: The fractional duty cycle of the repeating texture.
     """
 
-    structures = check_structures(structures, session)
+    atoms = check_atoms(atoms, session)
+
+    if replace:
+        all_models = {
+            m.atoms.hash(): m for m in session.models.list(type=PaperChainModel)
+        }
+    else:
+        all_models = {}
 
     models: list[PaperChainModel] = []
 
-    for structure in structures:
-        structure: Structure
-
-        model = None
-
-        new = True
-        if replace:
-            model = find_model(PaperChainModel, structure, session)
+    for structure, model_atoms in atoms.by_structure:
+        model = all_models.get(model_atoms.hash())
         if model is None:
+            name = f"{structure.name} PaperChain"
             model = PaperChainModel(
                 session,
-                structure,
+                model_atoms,
+                name,
                 update=update,
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
@@ -142,10 +144,19 @@ def paperchain(
         model.calculate_graphics()
 
         if new:
-            # Add new models to open models list.
+            if replace:
+                # remove other models that overlap this one
+                for m in all_models.values():
+                    m: PaperChainModel
+                    if m.structure != model.structure:
+                        continue
+                    if m.atoms.intersects(model_atoms):
+                        session.models.close([m])
+
+            # add new models to open models list
             session.models.add([model], parent=model.structure)
 
-        # Make sure replaced models are displayed.
+        # make sure updated models are displayed
         model.display = True
 
         models.append(model)
@@ -154,7 +165,7 @@ def paperchain(
 
 
 @cmd(
-    optional=[("structures", StructuresArg)],
+    optional=[("atoms", AtomsArg)],
     keyword=[
         ("replace", BoolArg),
         ("update", BoolArg),
@@ -171,7 +182,7 @@ def paperchain(
 )
 def twister(
     session: Session,
-    structures: Structures | None = None,
+    atoms: Atoms | None = None,
     replace=True,
     update=True,
     start_end_centroid=True,
@@ -203,7 +214,7 @@ def twister(
         gum_twist: Whether to enable the Twister Gum variant.
     """
 
-    structures = check_structures(structures, session)
+    atoms = check_atoms(atoms, session)
 
     if colormap is None:
         colormap = None
@@ -214,20 +225,21 @@ def twister(
     else:
         raise ValueError(f"{colormap!r} is not a valid color map name")
 
+    if replace:
+        all_models = {m.atoms.hash(): m for m in session.models.list(type=TwisterModel)}
+    else:
+        all_models = {}
+
     models: list[TwisterModel] = []
 
-    for structure in structures:
-        structure: Structure
-
-        model = None
-
-        new = True
-        if replace:
-            model = find_model(TwisterModel, structure, session)
+    for structure, model_atoms in atoms.by_structure:
+        model = all_models.get(model_atoms.hash())
         if model is None:
+            name = f"{structure.name} Twister"
             model = TwisterModel(
                 session,
-                structure,
+                model_atoms,
+                name,
                 update=update,
                 start_end_centroid=start_end_centroid,
                 rib_steps=rib_steps,
@@ -256,10 +268,19 @@ def twister(
         model.calculate_graphics()
 
         if new:
-            # Add new models to open models list.
+            if replace:
+                # remove other models that overlap this one
+                for m in all_models.values():
+                    m: TwisterModel
+                    if m.structure != model.structure:
+                        continue
+                    if m.atoms.intersects(model_atoms):
+                        session.models.close([m])
+
+            # add new models to open models list
             session.models.add([model], parent=model.structure)
 
-        # Make sure replaced model are displayed.
+        # make sure updated models are displayed
         model.display = True
 
         models.append(model)
@@ -268,7 +289,7 @@ def twister(
 
 
 @cmd(
-    optional=[("structures", StructuresArg)],
+    optional=[("atoms", AtomsArg)],
     keyword=[
         ("replace", BoolArg),
         ("update", BoolArg),
@@ -284,7 +305,7 @@ def twister(
 )
 def strand(
     session: Session,
-    structures: Structures | None = None,
+    atoms: Atoms | None = None,
     replace=True,
     update=True,
     max_ring_size=10,
@@ -314,7 +335,7 @@ def strand(
             One of: 'paperchain'.
     """
 
-    structures = check_structures(structures, session)
+    atoms = check_atoms(atoms, session)
 
     if colormap == "default":
         colormap = dihedral_colormap
@@ -331,20 +352,21 @@ def strand(
     elif sphere_colormap is not None:
         raise ValueError(f"{sphere_colormap!r} is not a valid sphere color map name")
 
+    if replace:
+        all_models = {m.atoms.hash(): m for m in session.models.list(type=StrandModel)}
+    else:
+        all_models = {}
+
     models: list[StrandModel] = []
 
-    for structure in structures:
-        structure: Structure
-
-        model = None
-
-        new = True
-        if replace:
-            model = find_model(StrandModel, structure, session)
+    for structure, model_atoms in atoms.by_structure:
+        model = all_models.get(model_atoms.hash())
         if model is None:
+            name = f"{structure.name} Strand"
             model = StrandModel(
                 session,
-                structure,
+                model_atoms,
+                name,
                 update=update,
                 max_ring_size=max_ring_size,
                 max_path_len=max_path_len,
@@ -371,10 +393,19 @@ def strand(
         model.calculate_graphics()
 
         if new:
-            # Add new models to open models list.
+            if replace:
+                # remove other models that overlap this one
+                for m in all_models.values():
+                    m: PaperChainModel
+                    if m.structure != model.structure:
+                        continue
+                    if m.atoms.intersects(model_atoms):
+                        session.models.close([m])
+
+            # add new models to open models list
             session.models.add([model], parent=model.structure)
 
-        # Make sure replaced model are displayed.
+        # make sure updated models are displayed
         model.display = True
 
         models.append(model)
@@ -426,32 +457,15 @@ def color_bydihedral(
     )
 
 
-def check_structures(structures: Structures | None, session: Session) -> Structures:
-    if structures is None:
-        structures = all_structures(session)
-        if len(structures) == 0:
-            raise UserError("No structures open")
-        setattr(structures, "spec", "all structures")
-    elif len(structures) == 0:
+def check_atoms(atoms: Atoms | None, session: Session) -> Atoms:
+    if atoms is None:
+        atoms = all_atoms(session)
+        if len(atoms) == 0:
+            raise UserError("No atomic models open")
+        setattr(atoms, "spec", "all atoms")
+    elif len(atoms) == 0:
         msg = "No structures specified"
-        if hasattr(structures, "spec"):
-            msg += f" by {getattr(structures, 'spec')}"
+        if hasattr(atoms, "spec"):
+            msg += f" by {getattr(atoms, 'spec')}"
         raise UserError(msg)
-    return structures
-
-
-ModelT = TypeVar("ModelT", bound=CarbVisModel)
-
-
-def find_model(
-    cls: type[ModelT],
-    structure: Structure,
-    session: Session,
-) -> ModelT | None:
-    """Try to find an existing model for the structure"""
-
-    for model in session.models.list(type=cls):
-        model: ModelT
-        if model.structure == structure:
-            return model
-    return None
+    return atoms
