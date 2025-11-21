@@ -1,15 +1,19 @@
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Iterator, Self
 
 import numpy as np
-from chimerax.atomic import Atom, Atoms, Element, Residue, Residues, Ring
+from chimerax.atomic import Atom, Atoms, Bond, Bonds, Element, Residue, Residues, Ring
+from chimerax.core.commands import run
+from chimerax.core.state import State
 from chimerax.geometry import dihedral
+from chimerax.graphics import Pick
 
 from .utils import FloatArray, Frame, dfs_paths, gaussian, time
 
 
 @dataclass
-class CarbRing:
+class CarbRing(State):
     """
     A ring of atoms connected to each other in a loop.
 
@@ -18,12 +22,14 @@ class CarbRing:
 
     Attributes:
         atoms: The atoms in the ring.
+        bonds: The bonds between the atoms.
         residue: The residue the atoms are part of.
         orientation: Indicates if the order of the atoms corresponds
             to the orientation (handedness) of the ring.
     """
 
     atoms: Atoms
+    bonds: Bonds
     residue: Residue
     orientated: bool = field(default=False)
 
@@ -36,17 +42,19 @@ class CarbRing:
         """
 
         atoms: Atoms = ring.ordered_atoms
+        bonds: Bonds = ring.ordered_bonds
 
         # roll the atoms list for a consistent ring ordering
         roll_shift = -np.argmin([a.name for a in atoms])
         if roll_shift != 0:
             atoms = Atoms(np.roll(atoms.pointers, roll_shift))
+            bonds = Bonds(np.roll(bonds.pointers, roll_shift))
 
         residues: Residues = atoms.unique_residues
         if len(residues) != 1:
             raise ValueError("Ring crosses residue boundary")
 
-        ret = cls(atoms, residues[0])
+        ret = cls(atoms, bonds, residues[0])
 
         ret.orientate()
         # if not ret.orientate():
@@ -67,6 +75,25 @@ class CarbRing:
     def coords(self) -> FloatArray:
         """The atom coordinates."""
         return self.atoms.coords
+
+    @property
+    def atomspec(self) -> str:
+        res = self.residue.atomspec
+        atoms = ",".join(a.name for a in self)
+        return f"{res}@{atoms}"
+
+    @property
+    def selected(self) -> bool:
+        if self.atoms.num_selected != len(self.atoms):
+            return False
+        if self.bonds.num_selected != len(self.bonds):
+            return False
+        return True
+
+    @selected.setter
+    def selected(self, sel: bool):
+        self.atoms.selected = sel
+        self.bonds.selected = sel
 
     def orientate(self) -> bool:
         """
@@ -219,21 +246,124 @@ class CarbRing:
         q = np.sqrt(np.sum(displ**2))
         return min(q, 2.0)  # truncate amplitude at 2
 
+    def take_snapshot(self, session, flags):
+        return {
+            "atoms": self.atoms,
+            "bonds": self.bonds,
+            "residue": self.residue,
+            "orientated": self.orientated,
+        }
+
+    @classmethod
+    def restore_snapshot(cls, session, data):
+        return cls(**data)
+
+
+class PickedRing(Pick):
+    def __init__(self, ring: CarbRing, distance):
+        super().__init__(distance)
+        self.ring = ring
+
+    def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        ring = self.ring
+        res = str(ring.residue)
+        atoms = ",".join(a.name for a in ring)
+        return f"{res} {atoms}"
+
+    @property
+    def residue(self) -> Residue:
+        return self.ring.residue
+
+    def select(self, mode="add"):
+        ring = self.ring
+        session = ring.residue.session
+        if mode == "add" or (mode == "toggle" and not ring.selected):
+            run(session, f"select add {ring.atomspec}")
+        else:
+            run(session, f"select subtract {ring.atomspec}")
+
+    def specifier(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        return self.ring.atomspec
+
+
+class PickedRings(Pick):
+    def __init__(self, rings: list[CarbRing]):
+        super().__init__()
+        self.rings = rings
+
+    def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        return f"{len(self.rings)} rings"
+
+    @property
+    def ring(self) -> CarbRing | None:
+        if len(self.rings) == 1:
+            return self.rings[0]
+        return None
+
+    def select(self, mode="add"):
+        if mode == "add":
+            for ring in self.rings:
+                ring.selected = True
+        elif mode == "subtract":
+            for ring in self.rings:
+                ring.selected = False
+        elif mode == "toggle":
+            for ring in self.rings:
+                ring.selected = not ring.selected
+
 
 @dataclass
-class CarbLinkage:
+class CarbLinkage(State):
     """
     A (C1->Cx) linkage between two rings.
 
+    Indexing, length and iteration operations are forwarded to the
+    atoms list.
+
     Attributes:
         atoms: The atoms in the linkage.
+        bonds: The bonds in the linkage.
         start_ring: The start ring, containing atoms[0].
         end_ring: The end ring, containing atoms[-1].
     """
 
-    atoms: list[Atom]
+    atoms: Atoms
+    bonds: Bonds
     start_ring: CarbRing
     end_ring: CarbRing
+
+    def __getitem__(self, i: int) -> Atom:
+        return self.atoms[i]  # pyright: ignore[reportReturnType]
+
+    def __len__(self) -> int:
+        return len(self.atoms)
+
+    def __iter__(self) -> Iterator[Atom]:
+        return iter(self.atoms)
+
+    @property
+    def atomspec(self) -> str:
+        ret = self[0].atomspec
+        for a1, a2 in pairwise(self):
+            s = a2.string(style="command", relative_to=a1)
+            if s.startswith("@"):
+                ret += f",{s[1:]}"
+            else:
+                ret += s
+        return ret
+
+    @property
+    def selected(self) -> bool:
+        if self.atoms.num_selected != len(self.atoms):
+            return False
+        if self.bonds.num_selected != len(self.bonds):
+            return False
+        return True
+
+    @selected.setter
+    def selected(self, sel: bool):
+        self.atoms.selected = sel
+        self.bonds.selected = sel
 
     def calc_angles(self) -> FloatArray:
         """Calculate the dihedral angles associated with the linkage."""
@@ -284,6 +414,67 @@ class CarbLinkage:
             angles[i] = dihedral(*(a.coord for a in angle_atoms[i : i + 4]))
         return angles
 
+    def take_snapshot(self, session, flags):
+        return {
+            "atoms": self.atoms,
+            "bonds": self.bonds,
+            "start_ring": self.start_ring,
+            "end_ring": self.end_ring,
+        }
+
+    @classmethod
+    def restore_snapshot(cls, session, data):
+        return cls(**data)
+
+
+class PickedLinkage(Pick):
+    def __init__(self, linkage: CarbLinkage, distance):
+        super().__init__(distance)
+        self.linkage = linkage
+
+    def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        linkage = self.linkage
+        a1 = linkage[0]
+        a2 = linkage[-1]
+        return f"{a1.string()} \N{RIGHTWARDS ARROW} {a2.string(relative_to=a1)}"
+
+    def select(self, mode="add"):
+        linkage = self.linkage
+        session = linkage.start_ring.residue.session
+        if mode == "add" or (mode == "toggle" and not linkage.selected):
+            run(session, f"select add {linkage.atomspec}")
+        else:
+            run(session, f"select subtract {linkage.atomspec}")
+
+    def specifier(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        return self.linkage.atomspec
+
+
+class PickedLinkages(Pick):
+    def __init__(self, linkages: list[CarbLinkage]):
+        super().__init__()
+        self.linkages = linkages
+
+    def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        return f"{len(self.linkages)} linkages"
+
+    @property
+    def linkage(self) -> CarbLinkage | None:
+        if len(self.linkages) == 1:
+            return self.linkages[0]
+        return None
+
+    def select(self, mode="add"):
+        if mode == "add":
+            for link in self.linkages:
+                link.selected = True
+        elif mode == "subtract":
+            for link in self.linkages:
+                link.selected = False
+        elif mode == "toggle":
+            for link in self.linkages:
+                link.selected = not link.selected
+
 
 @time
 def find_rings(atoms: Atoms, max_size: int) -> list[CarbRing]:
@@ -314,15 +505,20 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
             else:
                 atom_to_ring[atom] = start_ring
 
-    def get_neighbors(atom: Atom):
-        if atom is start_atom:
-            # for the first atom, only allow edges out of the ring
-            ret = [a for a in atom.neighbors if a not in atom_to_ring]
+    def get_neighbors(node: tuple[Atom, Bond | None]):
+        atom, bond = node
+        if bond is None:
+            # the first atom has bond None, only allow edges out of the ring
+            ret = [
+                (a, b)
+                for a, b in zip(atom.neighbors, atom.bonds)
+                if a not in atom_to_ring
+            ]
         elif atom in atom_to_ring:
             # otherwise if we're in a ring it's an endpoint
             ret = []
         else:
-            ret = [a for a in atom.neighbors]
+            ret = [(a, b) for a, b in zip(atom.neighbors, atom.bonds)]
         return ret
 
     linkages: list[CarbLinkage] = []
@@ -345,13 +541,13 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
                 continue
             visited.add(id_start_atom)
 
-            for linkage in dfs_paths(
+            for atom_path in dfs_paths(
                 get_neighbors,
-                start_atom,
+                (start_atom, None),
                 visited,
                 max_len=max_len,
             ):
-                end_atom = linkage[-1]
+                end_atom, _ = atom_path[-1]
                 if start_atom is end_atom:
                     continue
 
@@ -362,23 +558,37 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
                     continue
                 end_ring = atom_to_ring[end_atom]
 
+                atoms, bonds = map(list, zip(*atom_path))
+                bonds = bonds[1:]  # drop the first None
+
                 # enforce ordering, start_ring should be the C1 carbon
                 # also if no C1 involved at all, start_ring can be the C2 carbon
                 if start_atom.name in ("C1", "C1'", "C_1"):
-                    linkages.append(CarbLinkage(linkage, start_ring, end_ring))
+                    sring = start_ring
+                    ering = end_ring
                 elif end_atom.name in ("C1", "C1'", "C_1"):
-                    linkage.reverse()
-                    linkages.append(CarbLinkage(linkage, end_ring, start_ring))
+                    # flip
+                    sring = end_ring
+                    ering = start_ring
+                    atoms.reverse()
+                    bonds.reverse()
                 elif start_atom.name in ("C2", "C2'", "C_2"):
-                    linkages.append(CarbLinkage(linkage, start_ring, end_ring))
+                    sring = start_ring
+                    ering = end_ring
                 elif end_atom.name in ("C2", "C2'", "C_2"):
-                    linkage.reverse()
-                    linkages.append(CarbLinkage(linkage, end_ring, start_ring))
+                    # flip
+                    sring = end_ring
+                    ering = start_ring
+                    atoms.reverse()
+                    bonds.reverse()
                 else:
                     print(
                         f"warning: linkage {start_atom}->{end_atom} is not a (C1->Cx) linkage"
                     )
-                    linkages.append(CarbLinkage(linkage, start_ring, end_ring))
+                    sring = start_ring
+                    ering = end_ring
+
+                linkages.append(CarbLinkage(Atoms(atoms), Bonds(bonds), sring, ering))
 
     # print(f"LINKAGES: {len(linkages)}")
     return linkages

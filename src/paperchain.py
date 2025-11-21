@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import numpy as np
-from chimerax.atomic import Atoms
-from chimerax.core.models import Model
+from chimerax.atomic import AtomicStructures, Atoms
+from chimerax.core.models import Model, PickedModel
 from chimerax.core.session import Session
-from chimerax.graphics import Texture
+from chimerax.graphics import Drawing, PickedTriangle, PickedTriangles, Texture
 
-from .carbs import CarbRing, find_rings, paperchain_colormap
+from .carbs import CarbRing, PickedRing, PickedRings, find_rings, paperchain_colormap
 from .model import CarbVisModel
-from .utils import FloatArray, Frame, UByteArray, color_float_to_ubyte, time
+from .utils import FloatArray, Frame, IntArray, UByteArray, color_float_to_ubyte, time
 
 
 def make_texture(
@@ -181,10 +181,14 @@ class PaperChainModel(CarbVisModel):
     ):
         super().__init__(session, atoms, name, update=update)
 
+        self.selection_coupled = AtomicStructures([self.structure])
+
         self.bipyramid_height = bipyramid_height
         self.max_ring_size = max_ring_size
 
         self.rings: list[CarbRing] | None = None
+        self.ring_to_triangle: IntArray | None = None
+        self.triangle_to_ring: IntArray | None = None
 
         self.texture: Texture = Texture(linear_interpolation=True)
         self.tex_formula = tex_formula
@@ -242,6 +246,14 @@ class PaperChainModel(CarbVisModel):
 
         self.texture.reload_texture(tex)
 
+    def _clear_geometry(self):
+        super()._clear_geometry()
+
+        self.ring_to_triangle = None
+        self.triangle_to_ring = None
+
+        self.update_selection()
+
     def _do_update(self, *, structure_changed, coords_changed):
         if structure_changed or self.rings is None:
             self._update_rings()
@@ -265,11 +277,14 @@ class PaperChainModel(CarbVisModel):
         triangles = []
         vcolors = []
         texcoords = []
+        r2t = []
+        t2r = []
 
         assert self.rings is not None
-        for ring in self.rings:
+        for i, ring in enumerate(self.rings):
             color = paperchain_colormap(ring)
 
+            tri_before = len(triangles)
             draw_ring(
                 vertices,
                 normals,
@@ -280,16 +295,120 @@ class PaperChainModel(CarbVisModel):
                 color,
                 bipyramid_height,
             )
+            tri_after = len(triangles)
+
+            r2t.append((tri_before, tri_after))
+            t2r.extend(i for _ in range(tri_before, tri_after))
 
         vertices = np.array(vertices, dtype=np.float32)
         normals = np.array(normals, dtype=np.float32)
         triangles = np.array(triangles, dtype=np.int32)
         vcolors = np.array(vcolors, dtype=np.float32)
         texcoords = np.array(texcoords, dtype=np.float32)
+        r2t = np.array(r2t, dtype=np.int32)
+        t2r = np.array(t2r, dtype=np.int32)
 
         self.set_geometry(vertices, normals, triangles)
+        self.ring_to_triangle = r2t
+        self.triangle_to_ring = t2r
         self.set_vertex_colors(color_float_to_ubyte(vcolors))
         self.texture_coordinates = texcoords
+        self.update_selection()
+
+    def first_intercept(self, mxyz1, mxyz2, exclude=None):
+        p = Drawing.first_intercept(self, mxyz1, mxyz2, exclude)
+        if (
+            self.triangles is None
+            or not isinstance(p, PickedTriangle)
+            or p.drawing() is not self
+        ):
+            return p
+
+        rings = self.rings
+        t2r = self.triangle_to_ring
+
+        if rings is None or t2r is None:
+            pa = PickedModel(self, p.distance)
+        else:
+            t = p.triangle_number
+            ring = rings[t2r[t]]
+            pa = PickedRing(ring, p.distance)
+
+        setattr(pa, "triangle_pick", p)
+
+        return pa
+
+    def planes_pick(self, planes, exclude=None):
+        rp = Drawing.planes_pick(self, planes, exclude)
+        if self.triangles is None or not rp:
+            return rp
+
+        rings = self.rings
+        r2t = self.ring_to_triangle
+
+        if rings is None or r2t is None:
+            return rp
+
+        picks = []
+        for p in rp:
+            if isinstance(p, PickedTriangles) and p.drawing() is self:
+                tmask = p._triangles_mask
+                rr = [r for r, (ts, te) in zip(rings, r2t) if np.all(tmask[ts:te])]
+                picks.append(PickedRings(rr))
+        return picks
+
+    def get_selected(self, include_children=False, fully=False):
+        rings = self.rings
+
+        if rings is None:
+            return False
+
+        if fully:
+            for ring in rings:
+                if not ring.selected:
+                    return False
+            if include_children:
+                for c in self.child_models():
+                    if not c.get_selected(include_children=True, fully=True):
+                        return False
+            return True
+
+        for ring in rings:
+            if ring.selected:
+                return True
+        if include_children:
+            for c in self.child_models():
+                if c.get_selected(include_children=True):
+                    return True
+        return False
+
+    def set_selected(self, sel, *, fire_trigger=True):
+        rings = self.rings
+
+        if rings is not None:
+            for ring in rings:
+                ring.selected = sel
+            self.update_selection(fire_trigger=fire_trigger)
+
+    selected = property(get_selected, set_selected)
+
+    @time
+    def update_selection(self, *, fire_trigger=True):
+        rings = self.rings
+        t2r = self.triangle_to_ring
+
+        if rings is None or t2r is None:
+            self.highlighted_triangles_mask = None
+            return
+
+        ring_mask = np.empty(len(rings), dtype=bool)
+        for i, ring in enumerate(rings):
+            ring_mask[i] = ring.selected
+
+        triangle_mask = ring_mask[t2r]
+        self.highlighted_triangles_mask = triangle_mask
+        if fire_trigger:
+            self._selection_changed()
 
     # these attrs will all be recalculated on restore if auto-updating,
     # so we don't need to save them if auto_update is not set
@@ -297,6 +416,9 @@ class PaperChainModel(CarbVisModel):
         "vertices",
         "normals",
         "triangles",
+        "rings",
+        "ring_to_triangle",
+        "triangle_to_ring",
         "vertex_colors",
         "texture_coordinates",
     )

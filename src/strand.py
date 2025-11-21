@@ -3,15 +3,26 @@ from __future__ import annotations
 from typing import Callable
 
 import numpy as np
-from chimerax.atomic import Atoms
-from chimerax.core.models import Model
+from chimerax.atomic import AtomicStructures, Atoms
+from chimerax.core.models import Model, PickedModel
 from chimerax.core.session import Session
+from chimerax.graphics import Drawing, PickedTriangle, PickedTriangles
 
-from .carbs import CarbLinkage, CarbRing, find_linkages, find_rings
+from .carbs import (
+    CarbLinkage,
+    CarbRing,
+    PickedLinkage,
+    PickedLinkages,
+    PickedRing,
+    PickedRings,
+    find_linkages,
+    find_rings,
+)
 from .model import CarbVisModel
 from .utils import (
     FloatArray,
     Frame,
+    IntArray,
     color_float_to_ubyte,
     rotate,
     spherical_to_xyz,
@@ -42,8 +53,8 @@ def draw_tube(
     end_ring = linkage.end_ring
     end_centroid, end_normal = end_ring.get_centroid_and_normal()
 
-    start_coord = linkage.atoms[0].coord
-    end_coord = linkage.atoms[-1].coord
+    start_coord = linkage[0].coord
+    end_coord = linkage[-1].coord
 
     start_tangent = start_coord - start_centroid
     start_tangent -= np.dot(start_tangent, start_normal) * start_normal
@@ -384,6 +395,8 @@ class StrandModel(CarbVisModel):
     ):
         super().__init__(session, atoms, name, update=update)
 
+        self.selection_coupled = AtomicStructures([self.structure])
+
         self.max_ring_size = max_ring_size
         self.max_path_len = max_path_len
         self.radius = radius
@@ -394,7 +407,12 @@ class StrandModel(CarbVisModel):
 
         # only rings included in one or more linkages
         self.rings: list[CarbRing] | None = None
+        self.ring_to_triangle: IntArray | None = None
+        self.triangle_to_ring: IntArray | None = None
+
         self.linkages: list[CarbLinkage] | None = None
+        self.link_to_triangle: IntArray | None = None
+        self.triangle_to_link: IntArray | None = None
 
     def update_params(
         self,
@@ -422,6 +440,16 @@ class StrandModel(CarbVisModel):
         self.linkages = None
 
         self._clear_geometry()
+
+    def _clear_geometry(self):
+        super()._clear_geometry()
+
+        self.ring_to_triangle = None
+        self.triangle_to_ring = None
+        self.link_to_triangle = None
+        self.triangle_to_link = None
+
+        self.update_selection()
 
     def _do_update(self, *, structure_changed, coords_changed):
         if structure_changed or self.linkages is None:
@@ -455,6 +483,10 @@ class StrandModel(CarbVisModel):
         normals = []
         triangles = []
         vcolors = []
+        r2t = []
+        t2r = []
+        l2t = []
+        t2l = []
 
         segment_subdivisions = 20
         circle_subdivisions = 16
@@ -464,9 +496,10 @@ class StrandModel(CarbVisModel):
         ring_spheres: dict[int, tuple[list[int], list[FloatArray]]] = {}
 
         assert self.linkages is not None
-        for link in self.linkages:
+        for i, link in enumerate(self.linkages):
             color_a = colormap(link)
 
+            tri_before = len(triangles)
             draw_tube(
                 vertices,
                 normals,
@@ -481,6 +514,11 @@ class StrandModel(CarbVisModel):
                 segment_subdivisions,
                 circle_subdivisions,
             )
+            tri_after = len(triangles)
+
+            l2t.append((tri_before, tri_after))
+            t2l.extend(i for _ in range(tri_before, tri_after))
+            t2r.extend(-1 for _ in range(tri_before, tri_after))
 
         sphere_radius = max(sphere_radius, radius)
 
@@ -491,7 +529,7 @@ class StrandModel(CarbVisModel):
             sphere_candy_cane = False
 
         assert self.rings is not None
-        for ring in self.rings:
+        for i, ring in enumerate(self.rings):
             offset_list, color_list = ring_spheres[id(ring)]
 
             if sphere_colormap is not None:
@@ -506,6 +544,7 @@ class StrandModel(CarbVisModel):
                         for i in range(circle_subdivisions):
                             vcolors[offset + i] = color_a
 
+            tri_before = len(triangles)
             draw_sphere(
                 vertices,
                 normals,
@@ -518,14 +557,156 @@ class StrandModel(CarbVisModel):
                 sphere_candy_cane,
                 circle_subdivisions,
             )
+            tri_after = len(triangles)
+
+            r2t.append((tri_before, tri_after))
+            t2r.extend(i for _ in range(tri_before, tri_after))
+            t2l.extend(-1 for _ in range(tri_before, tri_after))
 
         vertices = np.array(vertices, dtype=np.float32)
         normals = np.array(normals, dtype=np.float32)
         triangles = np.array(triangles, dtype=np.int32)
         vcolors = np.array(vcolors, dtype=np.float32)
+        r2t = np.array(r2t, dtype=np.int32)
+        t2r = np.array(t2r, dtype=np.int32)
+        l2t = np.array(l2t, dtype=np.int32)
+        t2l = np.array(t2l, dtype=np.int32)
 
         self.set_geometry(vertices, normals, triangles)
+        self.ring_to_triangle = r2t
+        self.triangle_to_ring = t2r
+        self.link_to_triangle = l2t
+        self.triangle_to_link = t2l
         self.set_vertex_colors(color_float_to_ubyte(vcolors))
+        self.update_selection()
+
+    def first_intercept(self, mxyz1, mxyz2, exclude=None):
+        p = Drawing.first_intercept(self, mxyz1, mxyz2, exclude)
+        if (
+            self.triangles is None
+            or not isinstance(p, PickedTriangle)
+            or p.drawing() is not self
+        ):
+            return p
+
+        rings = self.rings
+        t2r = self.triangle_to_ring
+        linkages = self.linkages
+        t2l = self.triangle_to_link
+
+        if rings is None or t2r is None or linkages is None or t2l is None:
+            pa = PickedModel(self, p.distance)
+        else:
+            t = p.triangle_number
+            r = t2r[t]
+            l = t2l[t]
+            if r != -1:
+                ring = rings[r]
+                pa = PickedRing(ring, p.distance)
+            elif l != -1:
+                linkage = linkages[l]
+                pa = PickedLinkage(linkage, p.distance)
+            else:
+                pa = PickedModel(self, p.distance)
+
+        setattr(pa, "triangle_pick", p)
+
+        return pa
+
+    def planes_pick(self, planes, exclude=None):
+        rp = Drawing.planes_pick(self, planes, exclude)
+        if self.triangles is None or not rp:
+            return rp
+
+        rings = self.rings
+        r2t = self.ring_to_triangle
+        linkages = self.linkages
+        l2t = self.link_to_triangle
+
+        if rings is None or r2t is None or linkages is None or l2t is None:
+            return rp
+
+        picks = []
+        for p in rp:
+            if isinstance(p, PickedTriangles) and p.drawing() is self:
+                tmask = p._triangles_mask
+                rr = [r for r, (ts, te) in zip(rings, r2t) if np.all(tmask[ts:te])]
+                picks.append(PickedRings(rr))
+                ll = [l for l, (ts, te) in zip(linkages, l2t) if np.all(tmask[ts:te])]
+                picks.append(PickedLinkages(ll))
+        return picks
+
+    def get_selected(self, include_children=False, fully=False):
+        rings = self.rings
+        linkages = self.linkages
+
+        if rings is None or linkages is None:
+            return False
+
+        if fully:
+            for ring in rings:
+                if not ring.selected:
+                    return False
+            for link in linkages:
+                if not link.selected:
+                    return False
+            if include_children:
+                for c in self.child_models():
+                    if not c.get_selected(include_children=True, fully=True):
+                        return False
+            return True
+
+        for ring in rings:
+            if ring.selected:
+                return True
+        for link in linkages:
+            if link.selected:
+                return True
+        if include_children:
+            for c in self.child_models():
+                if c.get_selected(include_children=True):
+                    return True
+        return False
+
+    def set_selected(self, sel, *, fire_trigger=True):
+        rings = self.rings
+        linkages = self.linkages
+
+        if rings is not None and linkages is not None:
+            for ring in rings:
+                ring.selected = sel
+            for link in linkages:
+                link.selected = sel
+            self.update_selection(fire_trigger=fire_trigger)
+
+    selected = property(get_selected, set_selected)
+
+    def update_selection(self, *, fire_trigger=True):
+        rings = self.rings
+        t2r = self.triangle_to_ring
+        linkages = self.linkages
+        t2l = self.triangle_to_link
+
+        if rings is None or t2r is None or linkages is None or t2l is None:
+            self.highlighted_triangles_mask = None
+            return
+
+        ring_mask = np.empty(len(rings) + 1, dtype=bool)
+        for i, ring in enumerate(rings):
+            ring_mask[i] = ring.selected
+        ring_mask[-1] = False  # use False for -1 in t2r
+
+        link_mask = np.empty(len(linkages) + 1, dtype=bool)
+        for i, link in enumerate(linkages):
+            link_mask[i] = link.selected
+        link_mask[-1] = False  # use False for -1 in t2l
+
+        triangle_mask = ring_mask[t2r]
+        triangle_mask |= link_mask[t2l]
+
+        self.highlighted_triangles_mask = triangle_mask
+        if fire_trigger:
+            self._selection_changed()
 
     # these attrs will all be recalculated on restore if auto-updating,
     # so we don't need to save them if auto_update is not set
@@ -533,6 +714,12 @@ class StrandModel(CarbVisModel):
         "vertices",
         "normals",
         "triangles",
+        "ring",
+        "ring_to_triangle",
+        "triangle_to_ring",
+        "linkages",
+        "link_to_triangle",
+        "triangle_to_link",
         "vertex_colors",
     )
 

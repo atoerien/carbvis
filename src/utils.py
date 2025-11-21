@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 TIMING = False
-# TIMING = True
+TIMING = True
 
 # stop complaining when assigning float32 to float
 if TYPE_CHECKING:
@@ -159,6 +159,13 @@ def gaussian(x, a, b, c, p=1):
     return a * np.exp(-((((x - b) ** 2) / (2 * (c**2))) ** p))
 
 
+def _dfs_paths_id(node) -> int:
+    if type(node) is tuple:
+        return id(node[0])
+    else:
+        return id(node)
+
+
 def dfs_paths(
     get_neighbors: Callable[[T], Iterable[T]],
     node: T,
@@ -175,14 +182,15 @@ def dfs_paths(
     of nodes from the start node to a leaf (endpoint) where no further
     unvisited neighbors exist.
 
-    Node identity is tracked using Python's built-in id(), rather
-    than using == (__eq__).
+    Node identity is tracked using `id()`, rather than using == (`__eq__()`).
+    If the nodes are tuples, then `id(node[0])` is used, otherwise `id(node)`.
+    This is intended to be used for auxiliary data about either nodes or edges.
 
     Args:
         get_neighbors: A function that returns the neighbors of a node.
         node: The starting node for the DFS.
-        visited: A set of visited node IDs (via `id(node)`) used
-            to avoid revisiting nodes. If None, a new set is created.
+        visited: A set of visited node IDs used to avoid revisiting nodes.
+            If None, a new set is created.
         path: The current path of nodes being explored. If None, a new
             path is started with the given node.
         max_len: The maximum path length. If 0, no limit.
@@ -195,11 +203,11 @@ def dfs_paths(
     if path is None:
         path = [node]
     if visited is None:
-        visited = {id(node)}
+        visited = {_dfs_paths_id(node)}
 
     extended = False
     for neighbor in get_neighbors(node):
-        id_neighbor = id(neighbor)
+        id_neighbor = _dfs_paths_id(neighbor)
         if id_neighbor not in visited:
             # we're at the max len and we have a neighbor,
             # this path is invalid and we can return early

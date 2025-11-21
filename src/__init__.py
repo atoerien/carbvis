@@ -43,6 +43,14 @@ class _CarbVisAPI(BundleAPI):
             from .twister import TwisterModel
 
             return TwisterModel
+        elif name == "CarbRing":
+            from .carbs import CarbRing
+
+            return CarbRing
+        elif name == "CarbLinkage":
+            from .carbs import CarbLinkage
+
+            return CarbLinkage
         else:
             return None
 
