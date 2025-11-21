@@ -181,7 +181,7 @@ class CarbRing:
         # up and forward are length 1, no need to norm
         right = np.cross(up, forward)
 
-        return Frame(centroid, forward, right, up)
+        return Frame(centroid, up, forward, right)
 
     def calc_pucker_amplitude(self) -> float:
         """

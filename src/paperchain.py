@@ -83,6 +83,85 @@ def ring_tex(ring_coords: FloatArray, frame: Frame) -> FloatArray:
     return tex
 
 
+def draw_ring(
+    vertices: list[FloatArray],
+    normals: list[FloatArray],
+    triangles: list[tuple[int, int, int]],
+    vcolors: list[FloatArray],
+    texcoords: list[tuple[float, float]],
+    ring: CarbRing,
+    color: FloatArray,
+    bipyramid_height: float,
+):
+    """Draw the PaperChain polygon for a ring."""
+
+    ring_coords = ring.coords
+    frame = ring.get_frame()
+    tex = ring_tex(ring_coords, frame)
+
+    x = 0.5 * bipyramid_height * frame.up
+    top = frame.origin + x
+    bottom = frame.origin - x
+
+    triangle_offset = len(vertices)
+
+    vertices.append(top)
+    normals.append(frame.up)
+    vcolors.append(color)
+    texcoords.append((0.5, 0.25))
+
+    vertices.append(bottom)
+    normals.append(-frame.up)
+    vcolors.append(color)
+    texcoords.append((0.5, 0.75))
+
+    n = len(ring_coords)
+    for i in range(n):
+        next_i = (i + 1) % n
+
+        curvec = ring_coords[i]
+        nextvec = ring_coords[next_i]
+        delta = nextvec - curvec
+
+        normtop = np.cross(delta, curvec - top)
+        normtop /= np.linalg.norm(normtop)
+
+        # reverse normal direction for bottom half
+        normbot = -np.cross(delta, curvec - bottom)
+        normbot /= np.linalg.norm(normbot)
+
+        texbase = tex[i]
+        textop = (texbase[0], texbase[1] / 2)
+        texbot = (texbase[0], texbase[1] / 2 + 0.5)
+
+        vertices.append(curvec)
+        normals.append(normtop)
+        vcolors.append(color)
+        texcoords.append(textop)
+
+        triangles.append(
+            (
+                triangle_offset + 2 + (2 * next_i),
+                triangle_offset + 2 + (2 * i),
+                triangle_offset,
+            )
+        )
+
+        vertices.append(curvec)
+        normals.append(normbot)
+        vcolors.append(color)
+        texcoords.append(texbot)
+
+        # order different to keep anticlockwise winding
+        triangles.append(
+            (
+                triangle_offset + 3 + (2 * i),
+                triangle_offset + 3 + (2 * next_i),
+                triangle_offset + 1,
+            )
+        )
+
+
 PAPERCHAIN_STATE_VERSION = 1
 
 
@@ -165,22 +244,20 @@ class PaperChainModel(CarbVisModel):
 
     def _do_update(self, *, structure_changed, coords_changed):
         if structure_changed or self.rings is None:
-            self._calc_rings()
+            self._update_rings()
         if coords_changed or self.vertices is None:
-            self._calc_graphics()
+            self._update_graphics()
 
     @time
-    def _calc_rings(self):
+    def _update_rings(self):
         rings = find_rings(self.atoms, self.max_ring_size)
 
         if self.rings != rings:
             self.rings = rings
-            self.selected_rings = np.full(len(rings), False)
-            # self.update_selection()
             self._clear_geometry()
 
     @time
-    def _calc_graphics(self):
+    def _update_graphics(self):
         bipyramid_height = self.bipyramid_height
 
         vertices = []
@@ -191,84 +268,28 @@ class PaperChainModel(CarbVisModel):
 
         assert self.rings is not None
         for ring in self.rings:
-            n = len(ring.atoms)
-
             color = paperchain_colormap(ring)
 
-            ring_coords = ring.coords
-            frame = ring.get_frame()
-            tex = ring_tex(ring_coords, frame)
+            draw_ring(
+                vertices,
+                normals,
+                triangles,
+                vcolors,
+                texcoords,
+                ring,
+                color,
+                bipyramid_height,
+            )
 
-            x = 0.5 * bipyramid_height * frame.up
-            top = frame.origin + x
-            bottom = frame.origin - x
+        vertices = np.array(vertices, dtype=np.float32)
+        normals = np.array(normals, dtype=np.float32)
+        triangles = np.array(triangles, dtype=np.int32)
+        vcolors = np.array(vcolors, dtype=np.float32)
+        texcoords = np.array(texcoords, dtype=np.float32)
 
-            triangle_offset = len(vertices)
-
-            vertices.append(top)
-            normals.append(frame.up)
-            vcolors.append(color)
-            texcoords.append((0.5, 0.25))
-
-            vertices.append(bottom)
-            normals.append(-frame.up)
-            vcolors.append(color)
-            texcoords.append((0.5, 0.75))
-
-            for i in range(n):
-                next_i = (i + 1) % n
-
-                curvec = ring_coords[i]
-                nextvec = ring_coords[next_i]
-                delta = nextvec - curvec
-
-                normtop = np.cross(delta, curvec - top)
-                normtop /= np.linalg.norm(normtop)
-
-                # reverse normal direction for bottom half
-                normbot = -np.cross(delta, curvec - bottom)
-                normbot /= np.linalg.norm(normbot)
-
-                texbase = tex[i]
-                textop = (texbase[0], texbase[1] / 2)
-                texbot = (texbase[0], texbase[1] / 2 + 0.5)
-
-                vertices.append(curvec)
-                normals.append(normtop)
-                vcolors.append(color)
-                texcoords.append(textop)
-
-                triangles.append(
-                    (
-                        triangle_offset + 2 + (2 * next_i),
-                        triangle_offset + 2 + (2 * i),
-                        triangle_offset,
-                    )
-                )
-
-                vertices.append(curvec)
-                normals.append(normbot)
-                vcolors.append(color)
-                texcoords.append(texbot)
-
-                # order different to keep anticlockwise winding
-                triangles.append(
-                    (
-                        triangle_offset + 3 + (2 * i),
-                        triangle_offset + 3 + (2 * next_i),
-                        triangle_offset + 1,
-                    )
-                )
-
-        va = np.array(vertices, dtype=np.float32).reshape(-1, 3)
-        na = np.array(normals, dtype=np.float32).reshape(-1, 3)
-        ta = np.array(triangles, dtype=np.int32).reshape(-1, 3)
-        ca = np.array(vcolors, dtype=np.float32).reshape(-1, 3)
-        tc = np.array(texcoords, dtype=np.float32).reshape(-1, 2)
-
-        self.set_geometry(va, na, ta)
-        self.set_vertex_colors(color_float_to_ubyte(ca))
-        self.texture_coordinates = tc
+        self.set_geometry(vertices, normals, triangles)
+        self.set_vertex_colors(color_float_to_ubyte(vcolors))
+        self.texture_coordinates = texcoords
 
     # these attrs will all be recalculated on restore if auto-updating,
     # so we don't need to save them if auto_update is not set

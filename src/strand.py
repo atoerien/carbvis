@@ -25,7 +25,7 @@ def draw_tube(
     normals: list[FloatArray],
     triangles: list[tuple[int, int, int]],
     vcolors: list[FloatArray],
-    spheres: dict[tuple, tuple[CarbRing, FloatArray, list[int], list[FloatArray]]],
+    ring_spheres: dict[int, tuple[list[int], list[FloatArray]]],
     linkage: CarbLinkage,
     color_a: FloatArray,
     color_b: FloatArray,
@@ -106,7 +106,7 @@ def draw_tube(
     # tangent and forward are length 1, no need to norm
     right = np.cross(tangent, up)
 
-    frames.append(Frame(point, tangent, right, up))
+    frames.append(Frame(point, up, tangent, right))
 
     for i in range(1, len(spath)):
         prev_frame = frames[-1]
@@ -139,13 +139,13 @@ def draw_tube(
         # don't twist the first and last frames
         for i, frame in enumerate(frames[1:-1]):
             rot_angle = twist[i]
-            frame.right = rotate(frame.right, frame.forward, rot_angle)
             frame.up = rotate(frame.up, frame.forward, rot_angle)
+            frame.right = rotate(frame.right, frame.forward, rot_angle)
 
         # twist last frame the full angle to line up with the end ring
         frame = frames[-1]
-        frame.right = rotate(frame.right, frame.forward, correction_angle)
         frame.up = rotate(frame.up, frame.forward, correction_angle)
+        frame.right = rotate(frame.right, frame.forward, correction_angle)
 
     triangle_offset = len(vertices)
 
@@ -219,23 +219,22 @@ def draw_tube(
                 triangles.append((k0, k2, k1))
                 triangles.append((k1, k2, k3))
 
-    for ring, centroid, normal, i in zip(
-        (start_ring, end_ring),
-        (start_centroid, end_centroid),
-        (start_normal, end_normal),
+    for i, ring in zip(
         (0, len(frames) - 1),
+        (start_ring, end_ring),
     ):
-        centroid_tuple = tuple(centroid)
-        if centroid_tuple not in spheres:
-            spheres[centroid_tuple] = (ring, normal, [], [])
-
         if candy_cane:
             offset = triangle_offset + (2 * i) * circle_subdivisions
         else:
             offset = triangle_offset + i * circle_subdivisions
 
-        spheres[centroid_tuple][2].append(offset)
-        spheres[centroid_tuple][3].append(color_a)
+        id_ring = id(ring)
+        if id_ring not in ring_spheres:
+            ring_spheres[id_ring] = ([offset], [color_a])
+        else:
+            offset_list, color_list = ring_spheres[id_ring]
+            offset_list.append(offset)
+            color_list.append(color_a)
 
 
 def draw_sphere(
@@ -243,15 +242,16 @@ def draw_sphere(
     normals: list[FloatArray],
     triangles: list[tuple[int, int, int]],
     vcolors: list[FloatArray],
-    origin: FloatArray,
-    up: FloatArray,
+    ring: CarbRing,
     color_a: FloatArray,
     color_b: FloatArray,
     radius: float,
     candy_cane: bool,
     circle_subdivisions,
 ):
-    """Draw a sphere at an origin."""
+    """Draw a sphere at an ring."""
+
+    origin, up = ring.get_centroid_and_normal()
 
     n_lon = 128
     lat_inc = np.pi / circle_subdivisions
@@ -316,9 +316,9 @@ def draw_sphere(
     vcolors.append(color_a)
 
     k0 = triangle_offset
-    for j in range(n_lon):
-        k1 = triangle_offset + 1 + j
-        k2 = triangle_offset + 1 + (j + 1) % n_lon
+    for i in range(n_lon):
+        k1 = triangle_offset + 1 + i
+        k2 = triangle_offset + 1 + (i + 1) % n_lon
         triangles.append((k0, k1, k2))
 
     if candy_cane:
@@ -357,9 +357,9 @@ def draw_sphere(
 
     base = triangle_offset + 1 + (n_lat - 3) * n_lon
     k0 = len(vertices) - 1
-    for j in range(n_lon):
-        k1 = base + j
-        k2 = base + (j + 1) % n_lon
+    for i in range(n_lon):
+        k1 = base + i
+        k2 = base + (i + 1) % n_lon
         triangles.append((k0, k2, k1))
 
 
@@ -392,6 +392,8 @@ class StrandModel(CarbVisModel):
         self.sphere_radius = sphere_radius
         self.sphere_colormap = sphere_colormap
 
+        # only rings included in one or more linkages
+        self.rings: list[CarbRing] | None = None
         self.linkages: list[CarbLinkage] | None = None
 
     def update_params(
@@ -416,26 +418,33 @@ class StrandModel(CarbVisModel):
         self.sphere_radius = sphere_radius
         self.sphere_colormap = sphere_colormap
 
+        self.rings = None
         self.linkages = None
+
         self._clear_geometry()
 
     def _do_update(self, *, structure_changed, coords_changed):
         if structure_changed or self.linkages is None:
-            self._calc_linkages()
+            self._update_linkages()
         if coords_changed or self.vertices is None:
-            self._calc_graphics()
+            self._update_graphics()
 
     @time
-    def _calc_linkages(self):
+    def _update_linkages(self):
         rings = find_rings(self.atoms, self.max_ring_size)
         linkages = find_linkages(rings, self.max_path_len)
 
         if self.linkages != linkages:
+            rings_set = {
+                id(r) for link in linkages for r in (link.start_ring, link.end_ring)
+            }
+            self.rings = [r for r in rings if id(r) in rings_set]
+
             self.linkages = linkages
             self._clear_geometry()
 
     @time
-    def _calc_graphics(self):
+    def _update_graphics(self):
         radius = self.radius
         colormap = self.dihedral_colormap
         candy_cane = self.candy_cane
@@ -452,10 +461,7 @@ class StrandModel(CarbVisModel):
 
         color_b = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 
-        spheres: dict[
-            tuple,
-            tuple[CarbRing, FloatArray, list[int], list[FloatArray]],
-        ] = {}
+        ring_spheres: dict[int, tuple[list[int], list[FloatArray]]] = {}
 
         assert self.linkages is not None
         for link in self.linkages:
@@ -466,7 +472,7 @@ class StrandModel(CarbVisModel):
                 normals,
                 triangles,
                 vcolors,
-                spheres,
+                ring_spheres,
                 link,
                 color_a,
                 color_b,
@@ -484,8 +490,9 @@ class StrandModel(CarbVisModel):
         else:
             sphere_candy_cane = False
 
-        for centroid, (ring, normal, offset_list, color_list) in spheres.items():
-            centroid = np.array(centroid, dtype=np.float32)
+        assert self.rings is not None
+        for ring in self.rings:
+            offset_list, color_list = ring_spheres[id(ring)]
 
             if sphere_colormap is not None:
                 color_a = sphere_colormap(ring)
@@ -496,16 +503,15 @@ class StrandModel(CarbVisModel):
                     # overwrite vcolors for each adjacent frame
                     # this blends colors through the ring
                     for offset in offset_list:
-                        for j in range(circle_subdivisions):
-                            vcolors[offset + j] = color_a
+                        for i in range(circle_subdivisions):
+                            vcolors[offset + i] = color_a
 
             draw_sphere(
                 vertices,
                 normals,
                 triangles,
                 vcolors,
-                centroid,
-                normal,
+                ring,
                 color_a,
                 color_b,
                 sphere_radius,
@@ -513,13 +519,13 @@ class StrandModel(CarbVisModel):
                 circle_subdivisions,
             )
 
-        va = np.array(vertices, dtype=np.float32).reshape(-1, 3)
-        na = np.array(normals, dtype=np.float32).reshape(-1, 3)
-        ta = np.array(triangles, dtype=np.int32).reshape(-1, 3)
-        ca = np.array(vcolors, dtype=np.float32).reshape(-1, 3)
+        vertices = np.array(vertices, dtype=np.float32)
+        normals = np.array(normals, dtype=np.float32)
+        triangles = np.array(triangles, dtype=np.int32)
+        vcolors = np.array(vcolors, dtype=np.float32)
 
-        self.set_geometry(va, na, ta)
-        self.set_vertex_colors(color_float_to_ubyte(ca))
+        self.set_geometry(vertices, normals, triangles)
+        self.set_vertex_colors(color_float_to_ubyte(vcolors))
 
     # these attrs will all be recalculated on restore if auto-updating,
     # so we don't need to save them if auto_update is not set

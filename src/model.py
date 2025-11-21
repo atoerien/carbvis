@@ -47,6 +47,7 @@ class CarbVisModel(Model):
 
     def _clear_geometry(self):
         self.set_geometry(None, None, None)
+        # set_geometry clears vertex_colors
         self.texture_coordinates = None
 
     @property

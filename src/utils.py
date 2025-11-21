@@ -266,16 +266,20 @@ class Frame:
     """
 
     origin: FloatArray
+    up: FloatArray
     forward: FloatArray
     right: FloatArray
-    up: FloatArray
+
+    def __iter__(self):
+        # allow unpacking
+        return iter((self.origin, self.up, self.forward, self.right))
 
     def copy(self):
         return Frame(
             origin=np.copy(self.origin),
+            up=np.copy(self.up),
             forward=np.copy(self.forward),
             right=np.copy(self.right),
-            up=np.copy(self.up),
         )
 
     def align(self, forward: FloatArray):
@@ -292,6 +296,6 @@ class Frame:
             )
 
             # rotate frame angle rot_angle about rot_axis
+            self.up = rotate(self.up, rot_axis, rot_angle)
             self.forward = rotate(self.forward, rot_axis, rot_angle)
             self.right = rotate(self.right, rot_axis, rot_angle)
-            self.up = rotate(self.up, rot_axis, rot_angle)

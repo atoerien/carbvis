@@ -7,7 +7,7 @@ from chimerax.atomic import Atoms
 from chimerax.core.models import Model
 from chimerax.core.session import Session
 
-from .carbs import CarbLinkage, find_linkages, find_rings
+from .carbs import CarbLinkage, CarbRing, find_linkages, find_rings
 from .model import CarbVisModel
 from .utils import FloatArray, Frame, color_float_to_ubyte, rotate, spline, time
 
@@ -16,36 +16,345 @@ if TYPE_CHECKING:
     float = float | np.floating
 
 
-def draw_hexagon(
+def draw_ribbon(
     vertices: list[FloatArray],
     normals: list[FloatArray],
     triangles: list[tuple[int, int, int]],
     vcolors: list[FloatArray],
-    origin: FloatArray,
-    right: FloatArray,
-    up: FloatArray,
+    linkage: CarbLinkage,
+    color_top: FloatArray,
+    color_bottom: FloatArray,
+    start_end_centroid: bool,
+    rib_steps: int,
+    rib_width: float,
+    rib_height: float,
+    gum_twist: bool,
+):
+    """Draw a ribbon along a linkage."""
+
+    start_ring = linkage.start_ring
+    start_centroid, start_normal = start_ring.get_centroid_and_normal()
+
+    end_ring = linkage.end_ring
+    end_centroid, end_normal = end_ring.get_centroid_and_normal()
+
+    start_coord = linkage.atoms[0].coord
+    end_coord = linkage.atoms[-1].coord
+
+    start_tangent = start_coord - start_centroid
+    start_tangent -= np.dot(start_tangent, start_normal) * start_normal
+    start_tangent /= np.linalg.norm(start_tangent)
+
+    end_tangent = end_centroid - end_coord  # reversed direction for end tangent
+    end_tangent -= np.dot(end_tangent, end_normal) * end_normal
+    end_tangent /= np.linalg.norm(end_tangent)
+
+    if start_end_centroid:
+        # move start and end points towards their centroid
+        # and then onto the plane formed by the centroid and
+        # the ring normal
+        start_rib = 0.5 * (start_centroid + start_coord)
+        start_rib -= np.dot(start_rib - start_centroid, start_normal) * start_normal
+
+        end_rib = 0.5 * (end_centroid + end_coord)
+        end_rib -= np.dot(end_rib - end_centroid, end_normal) * end_normal
+    else:
+        start_rib = start_coord
+        end_rib = end_coord
+
+    rib_delta = start_rib - end_rib
+    rib_interval = np.linalg.norm(rib_delta)
+
+    ftmp1 = 1.0 / rib_interval
+
+    spline_a = np.zeros(3, dtype=np.float32)
+    spline_a += 2 * ftmp1 * rib_delta
+    spline_a += start_tangent
+    spline_a += end_tangent
+    spline_a *= ftmp1 * ftmp1
+
+    spline_b = np.zeros(3, dtype=np.float32)
+    spline_b -= 3 * ftmp1 * rib_delta
+    spline_b -= 2 * start_tangent
+    spline_b -= 1 * end_tangent
+    spline_b *= ftmp1
+
+    spline_c = start_tangent
+    spline_d = start_rib
+
+    t = np.linspace(0, rib_interval, rib_steps + 1, dtype=np.float32)
+    spath, stan = spline(spline_a, spline_b, spline_c, spline_d, t)
+
+    if start_end_centroid:
+        # extend the path to meet the centroids
+        spath = np.vstack((start_centroid, spath, end_centroid))
+        stan = np.vstack((start_tangent, stan, end_tangent))
+
+    frames: list[Frame] = []
+
+    # Initial frame
+    point = spath[0]
+    tangent = stan[0]
+    up = start_normal
+    up = up - np.dot(up, tangent) * tangent
+    if np.allclose(up, 0.0):
+        # fallback: pick a world axis
+        if abs(tangent[0]) < 0.9:
+            up = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        else:
+            up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        up = up - np.dot(up, tangent) * tangent
+    up /= np.linalg.norm(up)
+
+    # tangent and forward are length 1, no need to norm
+    right = np.cross(tangent, up)
+
+    frames.append(Frame(point, up, tangent, right))
+
+    for i in range(1, len(spath)):
+        prev_frame = frames[-1]
+        point = spath[i]
+        tangent = stan[i]
+
+        # copy previous frame
+        frame = prev_frame.copy()
+        frame.origin = point
+
+        # align frame with tangent
+        frame.align(tangent)
+
+        frames.append(frame)
+
+    if start_end_centroid:
+        spline_frames = frames[1:-1]
+    else:
+        spline_frames = frames
+    spline_end_frame = spline_frames[-1]
+
+    end_right = np.cross(end_tangent, end_normal)
+    end_right /= np.linalg.norm(end_right)
+
+    correction_angle = np.arccos(np.dot(end_right, spline_end_frame.right))
+    if np.dot(np.cross(end_right, spline_end_frame.right), end_tangent) > 0:
+        correction_angle *= -1
+
+    x = np.linspace(0, 1, rib_steps + 1, dtype=np.float32)
+    if gum_twist:
+        twist = correction_angle * np.sin(np.pi * x / 2) ** 2
+    else:
+        twist = correction_angle * x
+
+    if start_end_centroid:
+        # twist last frame the full angle to line up with the end ring
+        frame = frames[-1]
+        frame.up = rotate(frame.up, frame.forward, correction_angle)
+        frame.right = rotate(frame.right, frame.forward, correction_angle)
+
+    # rotate frames about frame.forward (twist)
+    for i, frame in enumerate(spline_frames):
+        rot_angle = twist[i]
+        frame.up = rotate(frame.up, frame.forward, rot_angle)
+        frame.right = rotate(frame.right, frame.forward, rot_angle)
+
+    if gum_twist:
+        x = np.linspace(0, 1, len(spline_frames), dtype=np.float32)
+        wave = np.sin(np.pi * x) ** 4
+        width_factor = 0.75 * abs(correction_angle) / np.pi
+        width = rib_width * (1 - width_factor * wave)
+    else:
+        width = np.full(len(frames), rib_width, dtype=np.float32)
+
+    if start_end_centroid:
+        width = np.hstack((rib_width, width, rib_width))
+
+    triangle_offset = len(vertices)
+
+    for i, frame in enumerate(frames):
+        w = width[i]
+
+        # vertices (of this frame's rectangle)
+
+        # top right (index +0)
+        vert = frame.origin + rib_height * frame.up + w * frame.right
+        vertices.append(vert)
+        vcolors.append(color_top)
+        norm = frame.up + frame.right
+        norm /= np.linalg.norm(norm)
+        normals.append(norm)
+
+        # bottom right (index +1)
+        vert = frame.origin - rib_height * frame.up + w * frame.right
+        vertices.append(vert)
+        vcolors.append(color_bottom)
+        norm = -frame.up + frame.right
+        norm /= np.linalg.norm(norm)
+        normals.append(norm)
+
+        # bottom left (index +2)
+        vert = frame.origin - rib_height * frame.up - w * frame.right
+        vertices.append(vert)
+        vcolors.append(color_bottom)
+        norm = -frame.up - frame.right
+        norm /= np.linalg.norm(norm)
+        normals.append(norm)
+
+        # top left (index +3)
+        vert = frame.origin + rib_height * frame.up - w * frame.right
+        vertices.append(vert)
+        vcolors.append(color_top)
+        norm = frame.up - frame.right
+        norm /= np.linalg.norm(norm)
+        normals.append(norm)
+
+        if i == len(frames) - 1:
+            continue  # no triangles for the last frame
+
+        current_vertex_offset = triangle_offset + i * 4
+        next_vertex_offset = current_vertex_offset + 4
+
+        # top 1
+        triangles.append(
+            (
+                current_vertex_offset,  # current, top right
+                next_vertex_offset,  # next, top right
+                current_vertex_offset + 3,  # current, top left
+            )
+        )
+
+        # top 2
+        triangles.append(
+            (
+                next_vertex_offset,  # next, top right
+                next_vertex_offset + 3,  # next, top left
+                current_vertex_offset + 3,  # current, top left
+            )
+        )
+
+        # bottom 1
+        triangles.append(
+            (
+                current_vertex_offset + 1,  # current, bottom right
+                current_vertex_offset + 2,  # current, bottom left
+                next_vertex_offset + 1,  # next, bottom right
+            )
+        )
+
+        # bottom 2
+        triangles.append(
+            (
+                next_vertex_offset + 1,  # next, bottom right
+                current_vertex_offset + 2,  # current, bottom left
+                next_vertex_offset + 2,  # next, bottom left
+            )
+        )
+
+        # right 1
+        triangles.append(
+            (
+                current_vertex_offset,  # current, top right
+                current_vertex_offset + 1,  # current, bottom right
+                next_vertex_offset,  # next, top right
+            )
+        )
+
+        # right 2
+        triangles.append(
+            (
+                next_vertex_offset,  # next, top right
+                current_vertex_offset + 1,  # current, bottom right
+                next_vertex_offset + 1,  # next, bottom right
+            )
+        )
+
+        # left 1
+        triangles.append(
+            (
+                current_vertex_offset + 3,  # current, top left
+                next_vertex_offset + 3,  # next, top left
+                current_vertex_offset + 2,  # current, bottom left
+            )
+        )
+
+        # left 2
+        triangles.append(
+            (
+                next_vertex_offset + 3,  # next, top left
+                next_vertex_offset + 2,  # next, bottom left
+                current_vertex_offset + 2,  # current, bottom left
+            )
+        )
+
+    if not start_end_centroid:
+        # Draw start and end end caps
+        # Start end caps
+        current_vertex_offset = triangle_offset
+
+        triangles.append(
+            (
+                current_vertex_offset + 3,  # top left
+                current_vertex_offset,  # top right
+                current_vertex_offset + 1,  # bottom right
+            )
+        )
+
+        triangles.append(
+            (
+                current_vertex_offset + 2,  # bottom left
+                current_vertex_offset + 1,  # bottom right
+                current_vertex_offset + 3,  # top left
+            )
+        )
+
+        # End end caps
+        current_vertex_offset = triangle_offset + rib_steps * 4
+
+        triangles.append(
+            (
+                current_vertex_offset + 3,  # top left
+                current_vertex_offset,  # top right
+                current_vertex_offset + 1,  # bottom right
+            )
+        )
+
+        triangles.append(
+            (
+                current_vertex_offset + 2,  # bottom left
+                current_vertex_offset + 1,  # bottom right
+                current_vertex_offset + 3,  # top left
+            )
+        )
+
+
+def draw_disk(
+    vertices: list[FloatArray],
+    normals: list[FloatArray],
+    triangles: list[tuple[int, int, int]],
+    vcolors: list[FloatArray],
+    ring: CarbRing,
+    color_top: FloatArray,
+    color_bottom: FloatArray,
     rib_height: float,
     rib_width: float,
-    top_color: FloatArray,
-    bottom_color: FloatArray,
 ):
-    """Draw a hexagon at an origin."""
+    """Draw a disk at a ring."""
+
+    origin, up, _, right = ring.get_frame()
 
     triangle_offset = len(vertices)
 
     # top centroid vertex
     vert = origin + rib_height * up
     vertices.append(vert)
-    vcolors.append(top_color)
+    vcolors.append(color_top)
     normals.append(up)
 
     # bottom centroid vertex
     vert = origin - rib_height * up
     vertices.append(vert)
-    vcolors.append(bottom_color)
+    vcolors.append(color_bottom)
     normals.append(-up)
 
-    # vertices for hexagon edges
+    # edge vertices
 
     POLYGON_N = 12
     ROT_ANGLE = 2 * np.pi / POLYGON_N
@@ -56,7 +365,7 @@ def draw_hexagon(
         # top hexagon vertex
         vert = origin + rib_height * up + rib_width * current_vec
         vertices.append(vert)
-        vcolors.append(top_color)
+        vcolors.append(color_top)
         norm = up + current_vec
         norm /= np.linalg.norm(norm)
         normals.append(norm)
@@ -64,7 +373,7 @@ def draw_hexagon(
         # bottom hexagon vertex
         vert = origin - rib_height * up + rib_width * current_vec
         vertices.append(vert)
-        vcolors.append(bottom_color)
+        vcolors.append(color_bottom)
         norm = -up + current_vec
         norm /= np.linalg.norm(norm)
         normals.append(norm)
@@ -72,7 +381,6 @@ def draw_hexagon(
         if i == POLYGON_N - 1:
             break  # don't bother rotating the last time
 
-        # Rotate current vec pi/3 radians about the ring normal
         current_vec = rotate(current_vec, up, ROT_ANGLE)
 
     for i in range(POLYGON_N):
@@ -151,6 +459,8 @@ class TwisterModel(CarbVisModel):
         self.dihedral_colormap = colormap
         self.gum_twist = gum_twist
 
+        # only rings included in one or more linkages
+        self.rings: list[CarbRing] | None = None
         self.linkages: list[CarbLinkage] | None = None
 
     def update_params(
@@ -177,26 +487,33 @@ class TwisterModel(CarbVisModel):
         self.dihedral_colormap = colormap
         self.gum_twist = gum_twist
 
+        self.rings = None
         self.linkages = None
+
         self._clear_geometry()
 
     def _do_update(self, *, structure_changed, coords_changed):
         if structure_changed or self.linkages is None:
-            self._calc_linkages()
+            self._update_linkages()
         if coords_changed or self.vertices is None:
-            self._calc_graphics()
+            self._update_graphics()
 
     @time
-    def _calc_linkages(self):
+    def _update_linkages(self):
         rings = find_rings(self.atoms, self.max_ring_size)
         linkages = find_linkages(rings, self.max_path_len)
 
         if self.linkages != linkages:
+            rings_set = {
+                id(r) for link in linkages for r in (link.start_ring, link.end_ring)
+            }
+            self.rings = [r for r in rings if id(r) in rings_set]
+
             self.linkages = linkages
             self._clear_geometry()
 
     @time
-    def _calc_graphics(self):
+    def _update_graphics(self):
         start_end_centroid = self.start_end_centroid
         rib_steps = self.rib_steps
         rib_width = self.rib_width
@@ -209,357 +526,66 @@ class TwisterModel(CarbVisModel):
         triangles = []
         vcolors = []
 
-        disk_places = set()
+        color_top = np.array([0.9, 0.9, 0.9], dtype=np.float32)
+        color_bottom = np.array([0.5, 0.5, 1.0], dtype=np.float32)
+
+        ring_colors: dict[int, tuple[FloatArray, FloatArray]] = {}
 
         assert self.linkages is not None
         for link in self.linkages:
-            start_ring = link.start_ring
-            start_centroid, start_normal = start_ring.get_centroid_and_normal()
-
-            end_ring = link.end_ring
-            end_centroid, end_normal = end_ring.get_centroid_and_normal()
-
-            start_coord = link.atoms[0].coord
-            end_coord = link.atoms[-1].coord
-
-            start_tangent = start_coord - start_centroid
-            start_tangent -= np.dot(start_tangent, start_normal) * start_normal
-            start_tangent /= np.linalg.norm(start_tangent)
-
-            end_tangent = end_centroid - end_coord  # reversed direction for end tangent
-            end_tangent -= np.dot(end_tangent, end_normal) * end_normal
-            end_tangent /= np.linalg.norm(end_tangent)
-
-            if start_end_centroid:
-                # move start and end points towards their centroid
-                # and then onto the plane formed by the centroid and
-                # the ring normal
-                start_rib = 0.5 * (start_centroid + start_coord)
-                start_rib -= (
-                    np.dot(start_rib - start_centroid, start_normal) * start_normal
-                )
-
-                end_rib = 0.5 * (end_centroid + end_coord)
-                end_rib -= np.dot(end_rib - end_centroid, end_normal) * end_normal
-            else:
-                start_rib = start_coord
-                end_rib = end_coord
-
-            rib_delta = start_rib - end_rib
-            rib_interval = np.linalg.norm(rib_delta)
-
-            ftmp1 = 1.0 / rib_interval
-
-            spline_a = np.zeros(3, dtype=np.float32)
-            spline_a += 2 * ftmp1 * rib_delta
-            spline_a += start_tangent
-            spline_a += end_tangent
-            spline_a *= ftmp1 * ftmp1
-
-            spline_b = np.zeros(3, dtype=np.float32)
-            spline_b -= 3 * ftmp1 * rib_delta
-            spline_b -= 2 * start_tangent
-            spline_b -= 1 * end_tangent
-            spline_b *= ftmp1
-
-            spline_c = start_tangent
-            spline_d = start_rib
-
-            t = np.linspace(0, rib_interval, rib_steps + 1, dtype=np.float32)
-            spath, stan = spline(spline_a, spline_b, spline_c, spline_d, t)
-
-            if start_end_centroid:
-                # extend the path to meet the centroids
-                spath = np.vstack((start_centroid, spath, end_centroid))
-                stan = np.vstack((start_tangent, stan, end_tangent))
-
-            frames: list[Frame] = []
-
-            # Initial frame
-            point = spath[0]
-            tangent = stan[0]
-            up = start_normal
-            up = up - np.dot(up, tangent) * tangent
-            if np.allclose(up, 0.0):
-                # fallback: pick a world axis
-                if abs(tangent[0]) < 0.9:
-                    up = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-                else:
-                    up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
-                up = up - np.dot(up, tangent) * tangent
-            up /= np.linalg.norm(up)
-
-            # tangent and forward are length 1, no need to norm
-            right = np.cross(tangent, up)
-
-            frames.append(Frame(point, tangent, right, up))
-
-            for i in range(1, len(spath)):
-                prev_frame = frames[-1]
-                point = spath[i]
-                tangent = stan[i]
-
-                # copy previous frame
-                frame = prev_frame.copy()
-                frame.origin = point
-
-                # align frame with tangent
-                frame.align(tangent)
-
-                frames.append(frame)
-
-            if start_end_centroid:
-                spline_frames = frames[1:-1]
-            else:
-                spline_frames = frames
-            spline_end_frame = spline_frames[-1]
-
-            end_right = np.cross(end_tangent, end_normal)
-            end_right /= np.linalg.norm(end_right)
-
-            correction_angle = np.arccos(np.dot(end_right, spline_end_frame.right))
-            if np.dot(np.cross(end_right, spline_end_frame.right), end_tangent) > 0:
-                correction_angle *= -1
-
-            x = np.linspace(0, 1, rib_steps + 1, dtype=np.float32)
-            if gum_twist:
-                twist = correction_angle * np.sin(np.pi * x / 2) ** 2
-            else:
-                twist = correction_angle * x
-
-            if start_end_centroid:
-                # twist last frame the full angle to line up with the end ring
-                frame = frames[-1]
-                frame.right = rotate(frame.right, frame.forward, correction_angle)
-                frame.up = rotate(frame.up, frame.forward, correction_angle)
-
-            # rotate frames about frame.forward (twist)
-            for i, frame in enumerate(spline_frames):
-                rot_angle = twist[i]
-                frame.right = rotate(frame.right, frame.forward, rot_angle)
-                frame.up = rotate(frame.up, frame.forward, rot_angle)
-
-            if gum_twist:
-                x = np.linspace(0, 1, len(spline_frames), dtype=np.float32)
-                wave = np.sin(np.pi * x) ** 4
-                width_factor = 0.75 * abs(correction_angle) / np.pi
-                width = rib_width * (1 - width_factor * wave)
-            else:
-                width = np.full(len(frames), rib_width, dtype=np.float32)
-
-            if start_end_centroid:
-                width = np.hstack((rib_width, width, rib_width))
-
             if colormap is not None:
                 color = colormap(link)
-                top_color = color
-                bottom_color = color
-            else:
-                top_color = np.array([0.9, 0.9, 0.9], dtype=np.float32)
-                bottom_color = np.array([0.5, 0.5, 1.0], dtype=np.float32)
+                color_top = color
+                color_bottom = color
 
-            triangle_offset = len(vertices)
+                id_start_ring = id(link.start_ring)
+                if id_start_ring not in ring_colors:
+                    ring_colors[id_start_ring] = (color_top, color_bottom)
+                id_end_ring = id(link.end_ring)
+                if id_end_ring not in ring_colors:
+                    ring_colors[id_end_ring] = (color_top, color_bottom)
 
-            for i, frame in enumerate(frames):
-                w = width[i]
+            draw_ribbon(
+                vertices,
+                normals,
+                triangles,
+                vcolors,
+                link,
+                color_top,
+                color_bottom,
+                start_end_centroid,
+                rib_steps,
+                rib_width,
+                rib_height,
+                gum_twist,
+            )
 
-                # vertices (of this frame's rectangle)
+        if start_end_centroid:
+            assert self.rings is not None
+            for ring in self.rings:
+                if colormap is not None:
+                    id_ring = id(ring)
+                    color_top, color_bottom = ring_colors[id_ring]
 
-                # top right (index +0)
-                vert = frame.origin + rib_height * frame.up + w * frame.right
-                vertices.append(vert)
-                vcolors.append(top_color)
-                norm = frame.up + frame.right
-                norm /= np.linalg.norm(norm)
-                normals.append(norm)
-
-                # bottom right (index +1)
-                vert = frame.origin - rib_height * frame.up + w * frame.right
-                vertices.append(vert)
-                vcolors.append(bottom_color)
-                norm = -frame.up + frame.right
-                norm /= np.linalg.norm(norm)
-                normals.append(norm)
-
-                # bottom left (index +2)
-                vert = frame.origin - rib_height * frame.up - w * frame.right
-                vertices.append(vert)
-                vcolors.append(bottom_color)
-                norm = -frame.up - frame.right
-                norm /= np.linalg.norm(norm)
-                normals.append(norm)
-
-                # top left (index +3)
-                vert = frame.origin + rib_height * frame.up - w * frame.right
-                vertices.append(vert)
-                vcolors.append(top_color)
-                norm = frame.up - frame.right
-                norm /= np.linalg.norm(norm)
-                normals.append(norm)
-
-                if i == len(frames) - 1:
-                    continue  # no triangles for the last frame
-
-                current_vertex_offset = triangle_offset + i * 4
-                next_vertex_offset = current_vertex_offset + 4
-
-                # top 1
-                triangles.append(
-                    (
-                        current_vertex_offset,  # current, top right
-                        next_vertex_offset,  # next, top right
-                        current_vertex_offset + 3,  # current, top left
-                    )
+                draw_disk(
+                    vertices,
+                    normals,
+                    triangles,
+                    vcolors,
+                    ring,
+                    color_top,
+                    color_bottom,
+                    rib_height,
+                    rib_width,
                 )
 
-                # top 2
-                triangles.append(
-                    (
-                        next_vertex_offset,  # next, top right
-                        next_vertex_offset + 3,  # next, top left
-                        current_vertex_offset + 3,  # current, top left
-                    )
-                )
+        vertices = np.array(vertices, dtype=np.float32)
+        normals = np.array(normals, dtype=np.float32)
+        triangles = np.array(triangles, dtype=np.int32)
+        vcolors = np.array(vcolors, dtype=np.float32)
 
-                # bottom 1
-                triangles.append(
-                    (
-                        current_vertex_offset + 1,  # current, bottom right
-                        current_vertex_offset + 2,  # current, bottom left
-                        next_vertex_offset + 1,  # next, bottom right
-                    )
-                )
-
-                # bottom 2
-                triangles.append(
-                    (
-                        next_vertex_offset + 1,  # next, bottom right
-                        current_vertex_offset + 2,  # current, bottom left
-                        next_vertex_offset + 2,  # next, bottom left
-                    )
-                )
-
-                # right 1
-                triangles.append(
-                    (
-                        current_vertex_offset,  # current, top right
-                        current_vertex_offset + 1,  # current, bottom right
-                        next_vertex_offset,  # next, top right
-                    )
-                )
-
-                # right 2
-                triangles.append(
-                    (
-                        next_vertex_offset,  # next, top right
-                        current_vertex_offset + 1,  # current, bottom right
-                        next_vertex_offset + 1,  # next, bottom right
-                    )
-                )
-
-                # left 1
-                triangles.append(
-                    (
-                        current_vertex_offset + 3,  # current, top left
-                        next_vertex_offset + 3,  # next, top left
-                        current_vertex_offset + 2,  # current, bottom left
-                    )
-                )
-
-                # left 2
-                triangles.append(
-                    (
-                        next_vertex_offset + 3,  # next, top left
-                        next_vertex_offset + 2,  # next, bottom left
-                        current_vertex_offset + 2,  # current, bottom left
-                    )
-                )
-
-            if start_end_centroid:
-                # Draw hexagonal disks for joining rings
-                start_centroid_tuple = tuple(start_centroid)
-                if start_centroid_tuple not in disk_places:
-                    disk_places.add(start_centroid_tuple)
-
-                    start_frame = frames[0]
-                    draw_hexagon(
-                        vertices,
-                        normals,
-                        triangles,
-                        vcolors,
-                        start_centroid,
-                        start_frame.right,
-                        start_frame.up,
-                        rib_height,
-                        rib_width,
-                        top_color,
-                        bottom_color,
-                    )
-                end_centroid_tuple = tuple(end_centroid)
-                if end_centroid_tuple not in disk_places:
-                    disk_places.add(end_centroid_tuple)
-
-                    end_frame = frames[-1]
-                    draw_hexagon(
-                        vertices,
-                        normals,
-                        triangles,
-                        vcolors,
-                        end_centroid,
-                        end_frame.right,
-                        end_frame.up,
-                        rib_height,
-                        rib_width,
-                        top_color,
-                        bottom_color,
-                    )
-            else:
-                # Draw start and end end caps
-                # Start end caps
-                current_vertex_offset = triangle_offset
-
-                triangles.append(
-                    (
-                        current_vertex_offset + 3,  # top left
-                        current_vertex_offset,  # top right
-                        current_vertex_offset + 1,  # bottom right
-                    )
-                )
-
-                triangles.append(
-                    (
-                        current_vertex_offset + 2,  # bottom left
-                        current_vertex_offset + 1,  # bottom right
-                        current_vertex_offset + 3,  # top left
-                    )
-                )
-
-                # End end caps
-                current_vertex_offset = triangle_offset + rib_steps * 4
-
-                triangles.append(
-                    (
-                        current_vertex_offset + 3,  # top left
-                        current_vertex_offset,  # top right
-                        current_vertex_offset + 1,  # bottom right
-                    )
-                )
-
-                triangles.append(
-                    (
-                        current_vertex_offset + 2,  # bottom left
-                        current_vertex_offset + 1,  # bottom right
-                        current_vertex_offset + 3,  # top left
-                    )
-                )
-
-        va = np.array(vertices, dtype=np.float32).reshape(-1, 3)
-        na = np.array(normals, dtype=np.float32).reshape(-1, 3)
-        ta = np.array(triangles, dtype=np.int32).reshape(-1, 3)
-        ca = np.array(vcolors, dtype=np.float32).reshape(-1, 3)
-
-        self.set_geometry(va, na, ta)
-        self.set_vertex_colors(color_float_to_ubyte(ca))
+        self.set_geometry(vertices, normals, triangles)
+        self.set_vertex_colors(color_float_to_ubyte(vcolors))
 
     # these attrs will all be recalculated on restore if auto-updating,
     # so we don't need to save them if auto_update is not set
