@@ -1,0 +1,3 @@
+from .paperchain import PaperChainModel
+
+def update_graphics(model: PaperChainModel): ...

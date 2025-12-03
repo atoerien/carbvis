@@ -15,10 +15,5 @@ install-rc: wheel
     whl="$(ls dist | head -n 1)"; if [ -n "$whl" ]; then ./rc.sh "toolshed install $PWD/dist/$whl"; fi
 
 clean:
-    #!/usr/bin/env bash
-    set -euxo pipefail
-    if command -v "$CHIMERAX" &> /dev/null; then
-        {{run}} 'devel clean . exit true'
-    else
-        rm -rf build dist *.egg-info src/__pycache__
-    fi
+    rm -rf build dist *.egg-info src/__pycache__
+    for f in src_cy/chimerax/carbvis/*.pyx; do rm -f "${f%.pyx}"{.cpp,.html}; done

@@ -1,0 +1,3 @@
+from .twister import TwisterModel
+
+def update_graphics(model: TwisterModel): ...

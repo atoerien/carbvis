@@ -11,6 +11,7 @@ dependencies = ["ChimeraX-Core~=1.10.0"]
 dynamic = ["classifiers", "requires-python"]
 
 [tool.chimerax]
+pure = false
 min-session-version = 1
 max-session-version = 1
 categories = ["General"]
@@ -22,21 +23,72 @@ synopsis = "Adds a PaperChain visualization to structures."
 
 [tool.chimerax.command.twister]
 category = "General"
-synopsis="Adds a Twister visualization to structures."
+synopsis = "Adds a Twister visualization to structures."
 
 [tool.chimerax.command.strand]
 category = "General"
-synopsis="Adds a Strand visualization to structures."
+synopsis = "Adds a Strand visualization to structures."
 
 [tool.chimerax.command."color bydihedral"]
 category = "General"
-synopsis="Color bonds by linkage dihedral angles."
+synopsis = "Color bonds by linkage dihedral angles."
 
+[tool.chimerax.extension._carbs]
+include-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+    "numpy",
+]
+sources = ["src_cy/chimerax/carbvis/_carbs.pyx"]
+
+[tool.chimerax.extension._paperchain]
+include-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+    "numpy",
+]
+sources = ["src_cy/chimerax/carbvis/_paperchain.pyx"]
+
+[tool.chimerax.extension._strand]
+include-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+    "numpy",
+]
+sources = ["src_cy/chimerax/carbvis/_strand.pyx"]
+
+[tool.chimerax.extension._twister]
+include-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+    "numpy",
+]
+sources = ["src_cy/chimerax/carbvis/_twister.pyx"]
+
+[tool.chimerax.extension._utils]
+include-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+    "numpy",
+]
+sources = ["src_cy/chimerax/carbvis/_utils.pyx"]
 
 [tool.basedpyright]
 include = ["src"]
 typeCheckingMode = "standard"
 
+[tool.ruff]
+builtins = ["line_profile"]
+
 [build-system]
-requires = ["setuptools", "ChimeraX-BundleBuilder"]
+requires = [
+    "cython",
+    "setuptools",
+    "ChimeraX-BundleBuilder",
+]
 build-backend = "chimerax.bundle_builder.cx_pep517"

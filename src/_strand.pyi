@@ -1,0 +1,3 @@
+from .strand import StrandModel
+
+def update_graphics(model: StrandModel): ...

@@ -5,3 +5,11 @@ __pycache__/
 
 build
 dist
+
+*.lprof
+
+.cache
+compile_commands.json
+
+src_cy/**/*.cpp
+src_cy/**/*.html

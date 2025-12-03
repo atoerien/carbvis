@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Iterator, Self
+from typing import Self, cast
 
 import numpy as np
 from chimerax.atomic import Atom, Atoms, Bond, Bonds, Element, Residue, Residues, Ring
@@ -9,16 +9,22 @@ from chimerax.core.state import State
 from chimerax.geometry import dihedral
 from chimerax.graphics import Pick
 
-from .utils import FloatArray, Frame, dfs_paths, gaussian, time
+from ._carbs import (  # pyright: ignore[reportMissingModuleSource]
+    paperchain_colormap as paperchain_colormap,
+)
+from ._carbs import (  # pyright: ignore[reportMissingModuleSource]
+    ring_calc_pucker_amplitude_py,
+    ring_get_centroid_and_normal_py,
+    ring_get_centroid_py,
+    ring_get_frame_py,
+)
+from .utils import DoubleArray, FloatArray, Frame, dfs_paths, gaussian
 
 
 @dataclass
 class CarbRing(State):
     """
     A ring of atoms connected to each other in a loop.
-
-    Indexing, length and iteration operations are forwarded to the
-    atoms list.
 
     Attributes:
         atoms: The atoms in the ring.
@@ -62,24 +68,10 @@ class CarbRing(State):
 
         return ret
 
-    def __getitem__(self, i: int) -> Atom:
-        return self.atoms[i]  # pyright: ignore[reportReturnType]
-
-    def __len__(self) -> int:
-        return len(self.atoms)
-
-    def __iter__(self) -> Iterator[Atom]:
-        return iter(self.atoms)
-
-    @property
-    def coords(self) -> FloatArray:
-        """The atom coordinates."""
-        return self.atoms.coords
-
     @property
     def atomspec(self) -> str:
         res = self.residue.atomspec
-        atoms = ",".join(a.name for a in self)
+        atoms = ",".join(a.name for a in self.atoms)
         return f"{res}@{atoms}"
 
     @property
@@ -107,7 +99,7 @@ class CarbRing(State):
         oxygen = -1
 
         # Find an oxygen (or something with two bonds)
-        for i, atom in enumerate(self):
+        for i, atom in enumerate(self.atoms):
             element: Element = atom.element
             if element.number == 8 or atom.num_bonds == 2:
                 oxygen = i
@@ -117,8 +109,9 @@ class CarbRing(State):
             return False
 
         # find atoms before and after oxygen (taking into account wrapping)
-        atom_before_O = self[oxygen - 1]
-        atom_after_O = self[(oxygen + 1) % len(self.atoms)]
+        atoms = self.atoms
+        atom_before_O = cast(Atom, atoms[oxygen - 1])
+        atom_after_O = cast(Atom, atoms[(oxygen + 1) % len(atoms)])
 
         # ensure C1 carbon is after the oxygen
         # leave unorientated if the C1 carbon can't be found
@@ -135,11 +128,11 @@ class CarbRing(State):
         else:
             return False
 
-    def get_centroid(self) -> FloatArray:
+    def get_centroid(self) -> DoubleArray:
         """Calculate the ring centroid."""
-        return np.mean(self.coords, axis=0)
+        return ring_get_centroid_py(self)
 
-    def get_centroid_and_normal(self) -> tuple[FloatArray, FloatArray]:
+    def get_centroid_and_normal(self) -> tuple[DoubleArray, DoubleArray]:
         """
         Calculate the ring centroid and normal vector.
 
@@ -149,39 +142,7 @@ class CarbRing(State):
         Returns:
             A tuple (centroid, normal).
         """
-
-        ring_coords = self.coords
-
-        n = ring_coords.shape[0]
-
-        centroid = np.zeros(3, dtype=np.float32)
-        normal = np.zeros(3, dtype=np.float32)
-
-        # calculate centroid and normal
-        for i in range(n):
-            # calculate next ring position (wrapping as necessary)
-            next_i = i + 1
-            if next_i >= n:
-                next_i = 0
-
-            curvec = ring_coords[i]
-            nextvec = ring_coords[next_i]
-
-            # update centroid
-            centroid += curvec
-
-            # update normal (this is Newell's method; see Carbohydra paper)
-            normal[0] += (curvec[1] - nextvec[1]) * (curvec[2] + nextvec[2])
-            normal[1] += (curvec[2] - nextvec[2]) * (curvec[0] + nextvec[0])
-            normal[2] += (curvec[0] - nextvec[0]) * (curvec[1] + nextvec[1])
-
-        centroid /= n
-
-        # flip while normalizing - the "up" of a carbohydrate ring is a LH normal
-        # but Newell's method gives a RH normal
-        normal /= -np.linalg.norm(normal)
-
-        return centroid, normal
+        return ring_get_centroid_and_normal_py(self)
 
     def get_frame(self) -> Frame:
         """
@@ -190,61 +151,13 @@ class CarbRing(State):
         The forward vector of the frame points towards the first atom,
         and the up vector is the ring normal.
         """
-
-        centroid, up = self.get_centroid_and_normal()
-
-        # use the first atom as forward, should not be parallel to up
-        forward = self[0].coord - centroid
-        forward -= np.dot(forward, up) * up
-        if np.allclose(forward, 0.0):
-            # fallback: pick a world axis
-            if abs(up[0]) < 0.9:
-                forward = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-            else:
-                forward = np.array([0.0, 1.0, 0.0], dtype=np.float32)
-            forward = forward - np.dot(forward, up) * up
-        forward /= np.linalg.norm(forward)
-
-        # up and forward are length 1, no need to norm
-        right = np.cross(up, forward)
-
-        return Frame(centroid, up, forward, right)
+        return ring_get_frame_py(self)
 
     def calc_pucker_amplitude(self) -> float:
         """
         Calculate the Cremer-Pople puckering amplitude for this ring.
         """
-
-        # get centred ring coords
-        coords = self.coords - self.get_centroid()
-        n = coords.shape[0]
-
-        # Calculate cartesian axes based on coords of nuclei in ring
-        # using cremer-pople algorithm. It is assumed that the
-        # centre of geometry is the centre of the ring.
-
-        indices = np.arange(n)
-        ze_angle = 2.0 * np.pi * (indices - 1) / n
-        ze_sin = np.sin(ze_angle)
-        ze_cos = np.cos(ze_angle)
-
-        Rp = np.sum(coords.T * ze_sin, axis=1)
-        Rpp = np.sum(coords.T * ze_cos, axis=1)
-
-        z = np.cross(Rp, Rpp)
-        z /= np.linalg.norm(z)
-
-        # lmbda = np.dot(z, Rp)
-        # y = Rp - z * lmbda
-        # y /= np.linalg.norm(y)
-
-        # x = np.cross(y, z)
-
-        # calculate displacement from mean plane
-        displ = np.dot(coords, z)
-
-        q = np.sqrt(np.sum(displ**2))
-        return min(q, 2.0)  # truncate amplitude at 2
+        return ring_calc_pucker_amplitude_py(self)
 
     def take_snapshot(self, session, flags):
         return {
@@ -267,7 +180,7 @@ class PickedRing(Pick):
     def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
         ring = self.ring
         res = str(ring.residue)
-        atoms = ",".join(a.name for a in ring)
+        atoms = ",".join(a.name for a in ring.atoms)
         return f"{res} {atoms}"
 
     @property
@@ -317,9 +230,6 @@ class CarbLinkage(State):
     """
     A (C1->Cx) linkage between two rings.
 
-    Indexing, length and iteration operations are forwarded to the
-    atoms list.
-
     Attributes:
         atoms: The atoms in the linkage.
         bonds: The bonds in the linkage.
@@ -332,19 +242,10 @@ class CarbLinkage(State):
     start_ring: CarbRing
     end_ring: CarbRing
 
-    def __getitem__(self, i: int) -> Atom:
-        return self.atoms[i]  # pyright: ignore[reportReturnType]
-
-    def __len__(self) -> int:
-        return len(self.atoms)
-
-    def __iter__(self) -> Iterator[Atom]:
-        return iter(self.atoms)
-
     @property
     def atomspec(self) -> str:
-        ret = self[0].atomspec
-        for a1, a2 in pairwise(self):
+        ret = cast(Atom, self.atoms[0]).atomspec
+        for a1, a2 in pairwise(self.atoms):
             s = a2.string(style="command", relative_to=a1)
             if s.startswith("@"):
                 ret += f",{s[1:]}"
@@ -433,9 +334,9 @@ class PickedLinkage(Pick):
         self.linkage = linkage
 
     def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
-        linkage = self.linkage
-        a1 = linkage[0]
-        a2 = linkage[-1]
+        atoms = self.linkage.atoms
+        a1 = cast(Atom, atoms[0])
+        a2 = cast(Atom, atoms[-1])
         return f"{a1.string()} \N{RIGHTWARDS ARROW} {a2.string(relative_to=a1)}"
 
     def select(self, mode="add"):
@@ -476,7 +377,7 @@ class PickedLinkages(Pick):
                 link.selected = not link.selected
 
 
-@time
+@line_profile
 def find_rings(atoms: Atoms, max_size: int) -> list[CarbRing]:
     """Find all rings in atoms, with maximum size max_size."""
 
@@ -491,7 +392,7 @@ def find_rings(atoms: Atoms, max_size: int) -> list[CarbRing]:
     return rings
 
 
-@time
+@line_profile
 def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
     """Find all linkages between the rings, with maximum length max_len."""
 
@@ -499,7 +400,7 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
     multi_ring_atoms: set[Atom] = set()
 
     for start_ring in rings:
-        for atom in start_ring:
+        for atom in start_ring.atoms:
             if atom in atom_to_ring:
                 multi_ring_atoms.add(atom)
             else:
@@ -532,7 +433,7 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
         if not start_ring.orientated:
             continue
 
-        for start_atom in start_ring:
+        for start_atom in start_ring.atoms:
             if start_atom in multi_ring_atoms:
                 continue
 
@@ -594,78 +495,37 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
     return linkages
 
 
-def paperchain_colormap(ring: CarbRing) -> FloatArray:
-    """
-    Calculate the color for a ring, using the PaperChain algorithm.
-
-    Returns:
-        The calculated color as an RGB [0, 1] float array.
-    """
-
-    pucker = ring.calc_pucker_amplitude()
-
-    rgb = np.zeros(3, dtype=np.float32)  # default color is black
-
-    # Hot to cold color map:
-    # Red -> Yellow -> Green -> Cyan -> Blue -> Magenta
-    if pucker < 0.40:
-        # Red (1,0,0) -> Yellow (1,1,0)
-        rgb[0] = 1.0  # red
-        rgb[1] = pucker * 2.5  # increase green -> yellow
-        rgb[2] = 0.0
-    elif pucker < 0.56:
-        # Yellow (1,1,0) -> Green (0,1,0)
-        rgb[0] = 1.0 - (pucker - 0.40) * 6.25  # decrease red -> green
-        rgb[1] = 1.0
-        rgb[2] = 0.0
-    elif pucker < 0.64:
-        # Green (0,1,0) -> Cyan (0,1,1)
-        rgb[0] = 0.0
-        rgb[1] = 1.0  # green
-        rgb[2] = (pucker - 0.56) * 12.5  # increase blue
-    elif pucker < 0.76:
-        # Cyan (0,1,1) -> Blue (0,0,1)
-        rgb[0] = 0.0
-        rgb[1] = 1.0 - (pucker - 0.64) * 5.0  # decrease green
-        rgb[2] = 1.0
-    else:
-        # Blue (0,0,1) -> Magenta (1,0,1)
-        rgb[0] = (pucker - 0.76) * 0.8  # increase red
-        rgb[1] = 0.0
-        rgb[2] = 1.0
-
-    return rgb
-
-
+@line_profile
 def dihedral_norm_colormap(linkage: CarbLinkage) -> FloatArray:
     angles = linkage.calc_angles()
     n = angles.shape[0]
     if n == 0:
-        return np.zeros(3, dtype=np.float32)
+        return np.zeros(4, dtype=np.float32)
 
     v = np.linalg.norm(angles)
-    rgb = np.empty(3, dtype=np.float32)
-
     v /= np.sqrt(n) * 180
-    rgb[0] = 1
-    rgb[1] = 0.7 * (1 - v)
-    rgb[2] = 0.7 * (1 - v)
 
-    return rgb
+    ret = np.empty(4, dtype=np.float32)
+    ret[0] = 1
+    ret[1] = 0.7 * (1 - v)
+    ret[2] = 0.7 * (1 - v)
+    ret[3] = 1
+    return ret
 
 
+@line_profile
 def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
     angles = linkage.calc_angles()
 
     n = angles.shape[0]
     if n < 2 or n > 3:
         print(f"warning: linkage {linkage} has {n} angles")
-        return np.zeros(3, dtype=np.float32)
+        return np.zeros(4, dtype=np.float32)
 
     link_type = linkage.start_ring.residue.name[:1].lower()
     if link_type not in ("a", "b"):
         print(f"warning: linkage {linkage} has an unknown type {link_type!r}")
-        return np.zeros(3, dtype=np.float32)
+        return np.zeros(4, dtype=np.float32)
 
     if n == 2:
         phi, psi = angles
@@ -703,10 +563,11 @@ def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
     #     )
     #     print(f"v={v}\n")
 
-    rgb = np.empty(3, dtype=np.float32)
+    ret = np.empty(4, dtype=np.float32)
 
-    rgb[0] = 1
-    rgb[1] = 0.7 * (1 - v)
-    rgb[2] = 0.7 * (1 - v)
+    ret[0] = 1
+    ret[1] = 0.7 * (1 - v)
+    ret[2] = 0.7 * (1 - v)
+    ret[3] = 1
 
-    return rgb
+    return ret

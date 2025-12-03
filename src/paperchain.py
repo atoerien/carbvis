@@ -6,9 +6,12 @@ from chimerax.core.models import Model, PickedModel
 from chimerax.core.session import Session
 from chimerax.graphics import Drawing, PickedTriangle, PickedTriangles, Texture
 
-from .carbs import CarbRing, PickedRing, PickedRings, find_rings, paperchain_colormap
+from ._paperchain import (  # pyright: ignore[reportMissingModuleSource]
+    update_graphics,
+)
+from .carbs import CarbRing, PickedRing, PickedRings, find_rings
 from .model import CarbVisModel
-from .utils import FloatArray, Frame, IntArray, UByteArray, color_float_to_ubyte, time
+from .utils import IntArray, UByteArray
 
 
 def make_texture(
@@ -54,112 +57,6 @@ def make_texture(
 
     tex = np.where(mask[..., None], off_color, on_color).astype(np.uint8)
     return tex
-
-
-def ring_tex(ring_coords: FloatArray, frame: Frame) -> FloatArray:
-    """Calculate ring texture coordinates."""
-
-    n = len(ring_coords)
-
-    # project coordinates down into the (forward, right) plane
-    uv2d = np.empty((n, 2), dtype=np.float32)
-    radii = np.empty(n, dtype=np.float32)
-    for i, p in enumerate(ring_coords):
-        dr = p - frame.origin
-        dr_plane = dr - np.dot(dr, frame.up) * frame.up
-        x = np.dot(dr_plane, frame.forward)
-        y = np.dot(dr_plane, frame.right)
-        uv2d[i] = (x, y)
-        radii[i] = np.hypot(x, y)
-
-    # scale and translate to [0, 1] texture space
-    r_max = radii.max()
-    if r_max == 0:
-        # degenerate: all points at centre
-        tex = np.full((n, 2), 0.5)
-    else:
-        tex = uv2d / (2.0 * r_max) + 0.5
-
-    return tex
-
-
-def draw_ring(
-    vertices: list[FloatArray],
-    normals: list[FloatArray],
-    triangles: list[tuple[int, int, int]],
-    vcolors: list[FloatArray],
-    texcoords: list[tuple[float, float]],
-    ring: CarbRing,
-    color: FloatArray,
-    bipyramid_height: float,
-):
-    """Draw the PaperChain polygon for a ring."""
-
-    ring_coords = ring.coords
-    frame = ring.get_frame()
-    tex = ring_tex(ring_coords, frame)
-
-    x = 0.5 * bipyramid_height * frame.up
-    top = frame.origin + x
-    bottom = frame.origin - x
-
-    triangle_offset = len(vertices)
-
-    vertices.append(top)
-    normals.append(frame.up)
-    vcolors.append(color)
-    texcoords.append((0.5, 0.25))
-
-    vertices.append(bottom)
-    normals.append(-frame.up)
-    vcolors.append(color)
-    texcoords.append((0.5, 0.75))
-
-    n = len(ring_coords)
-    for i in range(n):
-        next_i = (i + 1) % n
-
-        curvec = ring_coords[i]
-        nextvec = ring_coords[next_i]
-        delta = nextvec - curvec
-
-        normtop = np.cross(delta, curvec - top)
-        normtop /= np.linalg.norm(normtop)
-
-        # reverse normal direction for bottom half
-        normbot = -np.cross(delta, curvec - bottom)
-        normbot /= np.linalg.norm(normbot)
-
-        texbase = tex[i]
-        textop = (texbase[0], texbase[1] / 2)
-        texbot = (texbase[0], texbase[1] / 2 + 0.5)
-
-        vertices.append(curvec)
-        normals.append(normtop)
-        vcolors.append(color)
-        texcoords.append(textop)
-
-        triangles.append(
-            (
-                triangle_offset + 2 + (2 * next_i),
-                triangle_offset + 2 + (2 * i),
-                triangle_offset,
-            )
-        )
-
-        vertices.append(curvec)
-        normals.append(normbot)
-        vcolors.append(color)
-        texcoords.append(texbot)
-
-        # order different to keep anticlockwise winding
-        triangles.append(
-            (
-                triangle_offset + 3 + (2 * i),
-                triangle_offset + 3 + (2 * next_i),
-                triangle_offset + 1,
-            )
-        )
 
 
 PAPERCHAIN_STATE_VERSION = 1
@@ -219,6 +116,7 @@ class PaperChainModel(CarbVisModel):
         self.rings = None
         self._clear_geometry()
 
+    @line_profile
     def _update_texture(self):
         """Regenerate and reload the texture."""
 
@@ -254,13 +152,14 @@ class PaperChainModel(CarbVisModel):
 
         self.update_selection()
 
+    @line_profile
     def _do_update(self, *, structure_changed, coords_changed):
         if structure_changed or self.rings is None:
             self._update_rings()
         if coords_changed or self.vertices is None:
             self._update_graphics()
 
-    @time
+    @line_profile
     def _update_rings(self):
         rings = find_rings(self.atoms, self.max_ring_size)
 
@@ -268,52 +167,8 @@ class PaperChainModel(CarbVisModel):
             self.rings = rings
             self._clear_geometry()
 
-    @time
     def _update_graphics(self):
-        bipyramid_height = self.bipyramid_height
-
-        vertices = []
-        normals = []
-        triangles = []
-        vcolors = []
-        texcoords = []
-        r2t = []
-        t2r = []
-
-        assert self.rings is not None
-        for i, ring in enumerate(self.rings):
-            color = paperchain_colormap(ring)
-
-            tri_before = len(triangles)
-            draw_ring(
-                vertices,
-                normals,
-                triangles,
-                vcolors,
-                texcoords,
-                ring,
-                color,
-                bipyramid_height,
-            )
-            tri_after = len(triangles)
-
-            r2t.append((tri_before, tri_after))
-            t2r.extend(i for _ in range(tri_before, tri_after))
-
-        vertices = np.array(vertices, dtype=np.float32)
-        normals = np.array(normals, dtype=np.float32)
-        triangles = np.array(triangles, dtype=np.int32)
-        vcolors = np.array(vcolors, dtype=np.float32)
-        texcoords = np.array(texcoords, dtype=np.float32)
-        r2t = np.array(r2t, dtype=np.int32)
-        t2r = np.array(t2r, dtype=np.int32)
-
-        self.set_geometry(vertices, normals, triangles)
-        self.ring_to_triangle = r2t
-        self.triangle_to_ring = t2r
-        self.set_vertex_colors(color_float_to_ubyte(vcolors))
-        self.texture_coordinates = texcoords
-        self.update_selection()
+        update_graphics(self)
 
     def first_intercept(self, mxyz1, mxyz2, exclude=None):
         p = Drawing.first_intercept(self, mxyz1, mxyz2, exclude)
@@ -392,7 +247,7 @@ class PaperChainModel(CarbVisModel):
 
     selected = property(get_selected, set_selected)
 
-    @time
+    @line_profile
     def update_selection(self, *, fire_trigger=True):
         rings = self.rings
         t2r = self.triangle_to_ring
