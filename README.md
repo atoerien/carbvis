@@ -4,7 +4,7 @@ A [UCSF ChimeraX](https://www.cgl.ucsf.edu/chimerax/) bundle implementing four c
 
 - PaperChain, with PaperChain Texture variant
 - Twister, with Twister Gum variant
-- Strand, with Twister Gum variant
+- Strand, with Candy Cane variant
 - Color by dihedral
 
 ## Requirements
@@ -16,7 +16,7 @@ A [UCSF ChimeraX](https://www.cgl.ucsf.edu/chimerax/) bundle implementing four c
 
 Run `just` to build the Python wheel in `build/`, and `just install` to install it into ChimeraX.
 
-The Justfile searches for the `chimerax` command in the `PATH`, if this is not present set the `CHIMERAX`
+The Justfile searches for the `chimerax` command in `PATH`, if this is not present set the `CHIMERAX`
 environment variable to the full path to the `chimerax` command.
 
 ## Usage
@@ -27,4 +27,4 @@ Prefix those commands with `help ` to print a list of arguments each command acc
 
 ## Attribution
 
-Original PaperChain and Twister algorithms were ported from their implementations in [VMD](https://www.ks.uiuc.edu/Research/vmd/) by Simon Cross et al.
+The original PaperChain and Twister algorithms were ported from their implementations in [VMD](https://www.ks.uiuc.edu/Research/vmd/) by Simon Cross et al.
