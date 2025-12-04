@@ -5,6 +5,7 @@ from typing import Self, cast
 import numpy as np
 from chimerax.atomic import Atom, Atoms, Bond, Bonds, Element, Residue, Residues, Ring
 from chimerax.core.commands import run
+from chimerax.core.session import Session
 from chimerax.core.state import State
 from chimerax.geometry import dihedral
 from chimerax.graphics import Pick
@@ -63,16 +64,23 @@ class CarbRing(State):
         ret = cls(atoms, bonds, residues[0])
 
         ret.orientate()
-        # if not ret.orientate():
-        #     print(f"warning: could not orientate ring {ret}")
 
         return ret
+
+    def __str__(self) -> str:
+        res = str(self.residue)
+        atoms = ",".join(a.name for a in self.atoms)
+        return f"{res} {atoms}"
 
     @property
     def atomspec(self) -> str:
         res = self.residue.atomspec
         atoms = ",".join(a.name for a in self.atoms)
         return f"{res}@{atoms}"
+
+    @property
+    def session(self) -> Session:
+        return self.residue.session
 
     @property
     def selected(self) -> bool:
@@ -87,7 +95,7 @@ class CarbRing(State):
         self.atoms.selected = sel
         self.bonds.selected = sel
 
-    def orientate(self) -> bool:
+    def orientate(self):
         """
         Orientate the ring, flipping the atom list such that the
         order corresponds to the handedness of the ring.
@@ -95,6 +103,8 @@ class CarbRing(State):
         Returns:
             Whether the ring was able to be oriented or not.
         """
+        if self.orientated:
+            return
 
         oxygen = -1
 
@@ -106,7 +116,11 @@ class CarbRing(State):
                 break
 
         if oxygen == -1:
-            return False
+            log = self.session.logger
+            log.warning(
+                f"ring {self} does not contain an oxygen atom, cannot orientate"
+            )
+            return
 
         # find atoms before and after oxygen (taking into account wrapping)
         atoms = self.atoms
@@ -121,12 +135,11 @@ class CarbRing(State):
             ptrs[1:] = np.flip(ptrs[1:])
             self.atoms = Atoms(ptrs)
             self.orientated = True
-            return True
         elif atom_after_O.name in ("C1", "C1'", "C_1", "C2", "C2'", "C_2"):
             self.orientated = True
-            return True
         else:
-            return False
+            log = self.session.logger
+            log.warning(f"ring {self} does not contain a C1 carbon, cannot orientate")
 
     def get_centroid(self) -> DoubleArray:
         """Calculate the ring centroid."""
@@ -178,10 +191,7 @@ class PickedRing(Pick):
         self.ring = ring
 
     def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
-        ring = self.ring
-        res = str(ring.residue)
-        atoms = ",".join(a.name for a in ring.atoms)
-        return f"{res} {atoms}"
+        return str(self.ring)
 
     @property
     def residue(self) -> Residue:
@@ -242,8 +252,16 @@ class CarbLinkage(State):
     start_ring: CarbRing
     end_ring: CarbRing
 
+    def __str__(self) -> str:
+        atoms = self.atoms
+        a1 = cast(Atom, atoms[0])
+        a2 = cast(Atom, atoms[-1])
+        return f"{a1.string()} \N{RIGHTWARDS ARROW} {a2.string(relative_to=a1)}"
+
     @property
     def atomspec(self) -> str:
+        if len(self.atoms) == 0:
+            return ""
         ret = cast(Atom, self.atoms[0]).atomspec
         for a1, a2 in pairwise(self.atoms):
             s = a2.string(style="command", relative_to=a1)
@@ -252,6 +270,10 @@ class CarbLinkage(State):
             else:
                 ret += s
         return ret
+
+    @property
+    def session(self) -> Session:
+        return self.start_ring.session
 
     @property
     def selected(self) -> bool:
@@ -286,7 +308,11 @@ class CarbLinkage(State):
         for a in first_atom.neighbors:
             if a != atoms[1] and a not in start_ring.atoms:
                 if found:
-                    print(f"warning: multiple non-ring atoms attached to {first_atom}")
+                    log = self.session.logger
+                    log.warning(
+                        f"multiple non-ring atoms attached to {first_atom},"
+                        f" dihedral angles for linkage {self} might be inaccurate"
+                    )
                 else:
                     angle_atoms.append(a)
                     found = True
@@ -302,7 +328,11 @@ class CarbLinkage(State):
         for a in last_atom.neighbors:
             if a != atoms[-2] and a not in end_ring.atoms:
                 if found:
-                    print(f"warning: multiple non-ring atoms attached to {last_atom}")
+                    log = self.session.logger
+                    log.warning(
+                        f"multiple non-ring atoms attached to {last_atom},"
+                        f" dihedral angles for linkage {self} might be inaccurate"
+                    )
                 else:
                     angle_atoms.append(a)
                     found = True
@@ -334,10 +364,7 @@ class PickedLinkage(Pick):
         self.linkage = linkage
 
     def description(self) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
-        atoms = self.linkage.atoms
-        a1 = cast(Atom, atoms[0])
-        a2 = cast(Atom, atoms[-1])
-        return f"{a1.string()} \N{RIGHTWARDS ARROW} {a2.string(relative_to=a1)}"
+        return str(self.linkage)
 
     def select(self, mode="add"):
         linkage = self.linkage
@@ -483,8 +510,10 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
                     atoms.reverse()
                     bonds.reverse()
                 else:
-                    print(
-                        f"warning: linkage {start_atom}->{end_atom} is not a (C1->Cx) linkage"
+                    log = start_atom.session.logger
+                    log.warning(
+                        f"linkage {start_atom}->{end_atom} is not a"
+                        " (C1->Cx) linkage, cannot enforce direction"
                     )
                     sring = start_ring
                     ering = end_ring
@@ -519,13 +548,17 @@ def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
 
     n = angles.shape[0]
     if n < 2 or n > 3:
-        print(f"warning: linkage {linkage} has {n} angles")
-        return np.zeros(4, dtype=np.float32)
+        log = linkage.session.logger
+        log.warning(f"linkage {linkage} has {n} angles, cannot calculate color")
+        return np.ones(4, dtype=np.float32)
 
     link_type = linkage.start_ring.residue.name[:1].lower()
     if link_type not in ("a", "b"):
-        print(f"warning: linkage {linkage} has an unknown type {link_type!r}")
-        return np.zeros(4, dtype=np.float32)
+        log = linkage.session.logger
+        log.warning(
+            f"linkage {linkage} has an unknown type {link_type!r}, cannot calculate color"
+        )
+        return np.ones(4, dtype=np.float32)
 
     if n == 2:
         phi, psi = angles
