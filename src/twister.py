@@ -4,7 +4,8 @@ from typing import Callable
 
 import numpy as np
 from chimerax.atomic import AtomicStructures, Atoms
-from chimerax.core.models import Model, PickedModel
+from chimerax.core.colors import Color
+from chimerax.core.models import MODEL_COLOR_CHANGED, Model, PickedModel
 from chimerax.core.session import Session
 from chimerax.graphics import Drawing, PickedTriangle, PickedTriangles
 
@@ -22,7 +23,7 @@ from .carbs import (
     find_rings,
 )
 from .model import CarbVisModel
-from .utils import FloatArray, IntArray
+from .utils import IntArray
 
 TWISTER_STATE_VERSION = 1
 
@@ -41,7 +42,8 @@ class TwisterModel(CarbVisModel):
         max_path_len: int,
         rib_width: float,
         rib_height: float,
-        colormap: Callable[[CarbLinkage], FloatArray] | None,
+        cmap_top: Callable[[CarbLinkage], Color] | Color,
+        cmap_bottom: Callable[[CarbLinkage], Color] | Color,
         gum_twist: bool,
     ):
         super().__init__(session, atoms, name, update=update)
@@ -54,7 +56,8 @@ class TwisterModel(CarbVisModel):
         self.max_path_len = max_path_len
         self.rib_width = rib_width
         self.rib_height = rib_height
-        self.dihedral_colormap = colormap
+        self.cmap_top = cmap_top
+        self.cmap_bottom = cmap_bottom
         self.gum_twist = gum_twist
 
         # only rings included in one or more linkages
@@ -76,7 +79,8 @@ class TwisterModel(CarbVisModel):
         max_path_len: int,
         rib_width: float,
         rib_height: float,
-        colormap: Callable[[CarbLinkage], FloatArray] | None,
+        cmap_top: Callable[[CarbLinkage], Color] | Color,
+        cmap_bottom: Callable[[CarbLinkage], Color] | Color,
         gum_twist: bool,
     ):
         self.auto_update = update
@@ -87,7 +91,8 @@ class TwisterModel(CarbVisModel):
         self.max_path_len = max_path_len
         self.rib_width = rib_width
         self.rib_height = rib_height
-        self.dihedral_colormap = colormap
+        self.cmap_top = cmap_top
+        self.cmap_bottom = cmap_bottom
         self.gum_twist = gum_twist
 
         self.rings = None
@@ -104,6 +109,21 @@ class TwisterModel(CarbVisModel):
         self.triangle_to_link = None
 
         self.update_selection()
+
+    def _get_overall_color(self):
+        if isinstance(self.cmap_top, Color):
+            if self.cmap_top == self.cmap_bottom:
+                return self.cmap_top
+        return None
+
+    def _set_overall_color(self, color):
+        c = Color(color)
+        self.cmap_top = c
+        self.cmap_bottom = c
+        self.session.triggers.activate_trigger(MODEL_COLOR_CHANGED, self)
+        self._update_graphics()
+
+    overall_color = model_color = property(_get_overall_color, _set_overall_color)
 
     @line_profile
     def _do_update(self, *, structure_changed, coords_changed):
@@ -284,7 +304,8 @@ class TwisterModel(CarbVisModel):
             "max_path_len": self.max_path_len,
             "rib_width": self.rib_width,
             "rib_height": self.rib_height,
-            "colormap": self.colormap,
+            "cmap_top": self.cmap_top,
+            "cmap_bottom": self.cmap_bottom,
             "gum_twist": self.gum_twist,
         }
         data["model state"] = Model.take_snapshot(self, session, flags)
@@ -307,7 +328,8 @@ class TwisterModel(CarbVisModel):
             max_path_len=data["max_path_len"],
             rib_width=data["rib_width"],
             rib_height=data["rib_height"],
-            colormap=data["colormap"],
+            cmap_top=data["cmap_top"],
+            cmap_bottom=data["cmap_bottom"],
             gum_twist=data["gum_twist"],
         )
         ret.set_state_from_snapshot(session, data)

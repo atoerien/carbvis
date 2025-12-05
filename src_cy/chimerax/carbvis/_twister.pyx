@@ -24,17 +24,17 @@ from ._carbs cimport (
 from ._utils cimport *
 
 ctypedef PyObject *RingColorMapKey
-ctypedef Color RingColorMapT
+ctypedef (CyColor, CyColor) RingColorMapT
 ctypedef map[RingColorMapKey, RingColorMapT] RingColorMap
 
 cdef void draw_ribbon(
     vector[Vec] &vertices,
     vector[Vec] &normals,
     vector[(int, int, int)] &triangles,
-    vector[Color] &vcolors,
+    vector[CyColor] &vcolors,
     object linkage,
-    Color color_top,
-    Color color_bottom,
+    CyColor color_top,
+    CyColor color_bottom,
     bint start_end_centroid,
     int rib_steps,
     double rib_width,
@@ -396,10 +396,10 @@ cdef void draw_disk(
     vector[Vec] &vertices,
     vector[Vec] &normals,
     vector[(int, int, int)] &triangles,
-    vector[Color] &vcolors,
+    vector[CyColor] &vcolors,
     object ring,
-    Color color_top,
-    Color color_bottom,
+    CyColor color_top,
+    CyColor color_bottom,
     double rib_height,
     double rib_width,
 ):
@@ -503,7 +503,7 @@ cdef void draw_disk(
 cdef inline void ring_color_add(
     RingColorMap &ring_colors,
     PyObject *ring,
-    Color color,
+    (CyColor, CyColor) color,
 ):
     v = pair[RingColorMapKey, RingColorMapT](ring, color)
     ring_colors.insert(v)
@@ -513,39 +513,59 @@ def update_graphics(object model not None):
     cdef int rib_steps = model.rib_steps
     cdef double rib_width = model.rib_width
     cdef double rib_height = model.rib_height
-    colormap = model.dihedral_colormap
     cdef bint gum_twist = model.gum_twist
+
+    cdef np.ndarray color_np
+    cmap_top = model.cmap_top
+    if not callable(cmap_top):
+        color_np = cmap_top.rgba
+        color_top = color_from_array(<float *>color_np.data)
+        cmap_top = None
+    cmap_bottom = model.cmap_bottom
+    if not callable(cmap_bottom):
+        color_np = cmap_bottom.rgba
+        color_bottom = color_from_array(<float *>color_np.data)
+        cmap_bottom = None
 
     cdef vector[Vec] vertices
     cdef vector[Vec] normals
     cdef vector[(int, int, int)] triangles
-    cdef vector[Color] vcolors
+    cdef vector[CyColor] vcolors
     cdef vector[(int, int)] r2t
     cdef vector[int] t2r
     cdef vector[(int, int)] l2t
     cdef vector[int] t2l
 
-    color_top = Color(0.9, 0.9, 0.9, 1.0)
-    color_bottom = Color(0.5, 0.5, 1.0, 1.0)
-
     cdef RingColorMap ring_colors
 
     cdef int i
-    cdef np.ndarray color_np
     cdef list linkages = model.linkages
 
     for i in range(len(linkages)):
         link = linkages[i]
 
-        if colormap is not None:
-            color_np = colormap(link)
-            color = color_from_array(<float *>color_np.data)
-            color_top = color
-            color_bottom = color
+        if cmap_top is cmap_bottom:
+            if cmap_top is not None:
+                color_np = cmap_top(link).rgba
+                color = color_from_array(<float *>color_np.data)
+                color_top = color
+                color_bottom = color
+        else:
+            if cmap_top is not None:
+                color_np = cmap_top(link).rgba
+                color_top = color_from_array(<float *>color_np.data)
+            if cmap_bottom is not None:
+                color_np = cmap_bottom(link).rgba
+                color_bottom = color_from_array(<float *>color_np.data)
 
-            if start_end_centroid:
-                ring_color_add(ring_colors, <PyObject *>link.start_ring, color)
-                ring_color_add(ring_colors, <PyObject *>link.end_ring, color)
+        if (
+            (cmap_top is not None or cmap_bottom is not None)
+            and start_end_centroid
+        ):
+            p_ring = <PyObject *>link.start_ring
+            ring_color_add(ring_colors, p_ring, (color_top, color_bottom))
+            p_ring = <PyObject *>link.end_ring
+            ring_color_add(ring_colors, p_ring, (color_top, color_bottom))
 
         tri_before = triangles.size()
         draw_ribbon(
@@ -576,10 +596,10 @@ def update_graphics(object model not None):
         for i in range(len(rings)):
             ring = rings[i]
 
-            if colormap is not None:
-                color = ring_colors[<PyObject *>ring]
-                color_top = color
-                color_bottom = color
+            if cmap_top is not None or cmap_bottom is not None:
+                color_top, color_bottom = ring_colors[<PyObject *>ring]
+
+                # TODO: blend colors
 
             tri_before = triangles.size()
             draw_disk(

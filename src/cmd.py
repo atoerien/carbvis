@@ -1,10 +1,12 @@
-from typing import Callable, ParamSpec, Protocol, TypeVar, cast
+from typing import Callable, Literal, ParamSpec, Protocol, TypeVar, Union, cast
 
 from chimerax.atomic import Atoms, Bonds, all_atoms, all_bonds
 from chimerax.atomic.args import AtomsArg, BondsArg
+from chimerax.core.colors import Color
 from chimerax.core.commands import (
     BoolArg,
     CmdDesc,
+    ColorArg,
     EmptyArg,
     EnumOf,
     FloatArg,
@@ -14,7 +16,13 @@ from chimerax.core.commands import (
 from chimerax.core.errors import UserError
 from chimerax.core.session import Session
 
-from .carbs import dihedral_colormap, dihedral_norm_colormap, paperchain_colormap
+from .carbs import (
+    CarbLinkage,
+    CarbRing,
+    dihedral_colormap,
+    dihedral_norm_colormap,
+    paperchain_colormap,
+)
 from .coloring import color_linkage_bonds
 from .paperchain import PaperChainModel
 from .strand import StrandModel
@@ -63,6 +71,44 @@ def cmd(
     return decorator
 
 
+RingColor = Union[
+    Literal["paperchain"],
+    Callable[[CarbRing], Color],
+    Color,
+]
+
+
+def ring_color(color: RingColor):
+    if color == "paperchain":
+        return paperchain_colormap
+    elif callable(color):
+        return color
+    elif isinstance(color, Color):
+        return color
+    else:
+        raise ValueError(f"{color!r} is not a valid color map")
+
+
+LinkageColor = Union[
+    Literal["default", "norm"],
+    Callable[[CarbLinkage], Color],
+    Color,
+]
+
+
+def linkage_color(color: LinkageColor):
+    if color == "default":
+        return dihedral_colormap
+    elif color == "norm":
+        return dihedral_norm_colormap
+    elif callable(color):
+        return color
+    elif isinstance(color, Color):
+        return color
+    else:
+        raise ValueError(f"{color!r} is not a valid color map")
+
+
 @cmd(
     optional=[("atoms", AtomsArg)],
     keyword=[
@@ -70,6 +116,7 @@ def cmd(
         ("update", BoolArg),
         ("bipyramid_height", FloatArg),
         ("max_ring_size", IntArg),
+        ("color", Or(ColorArg, EnumOf(("paperchain",)))),
         ("tex_formula", EnumOf(("stripes", "grid", "diamond", "rings", "waves"))),
         ("tex_period", IntArg),
         ("tex_duty", FloatArg),
@@ -83,6 +130,7 @@ def paperchain(
     update=True,
     bipyramid_height=1.0,
     max_ring_size=10,
+    color: RingColor = "paperchain",
     tex_formula=None,
     tex_period=128,
     tex_duty=0.5,
@@ -97,6 +145,7 @@ def paperchain(
             structure changes.
         bypyramid_height: The height of the PaperChain polygon.
         max_ring_size: A ring size limit when finding rings.
+        color: How to color the polygons.
         tex_formula: The formula to use for the ring texture.
             One of 'stripes', 'grid', 'diamond', 'rings', 'waves'
         tex_period: The length of the texture period, in pixels.
@@ -105,6 +154,9 @@ def paperchain(
 
     atoms = check_atoms(atoms, session)
 
+    cmap = ring_color(color)
+
+    all_models: dict[bytes, PaperChainModel]
     if replace:
         all_models = {
             m.atoms.hash(): m for m in session.models.list(type=PaperChainModel)
@@ -125,6 +177,7 @@ def paperchain(
                 update=update,
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
+                cmap=cmap,
                 tex_formula=tex_formula,
                 tex_period=tex_period,
                 tex_duty=tex_duty,
@@ -135,6 +188,7 @@ def paperchain(
                 update=update,
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
+                cmap=cmap,
                 tex_formula=tex_formula,
                 tex_period=tex_period,
                 tex_duty=tex_duty,
@@ -175,7 +229,8 @@ def paperchain(
         ("max_path_len", IntArg),
         ("rib_width", FloatArg),
         ("rib_height", FloatArg),
-        ("colormap", EnumOf(("default", "norm"))),
+        ("color_top", Or(ColorArg, EnumOf(("default", "norm")))),
+        ("color_bottom", Or(ColorArg, EnumOf(("default", "norm")))),
         ("gum_twist", BoolArg),
     ],
     synopsis="Adds a Twister visualization to structures.",
@@ -191,7 +246,8 @@ def twister(
     max_path_len=5,
     rib_width=0.3,
     rib_height=0.05,
-    colormap=None,
+    color_top: LinkageColor = Color((0.9, 0.9, 0.9), mutable=False),
+    color_bottom: LinkageColor = Color((0.5, 0.5, 1.0), mutable=False),
     gum_twist=False,
 ):
     """
@@ -209,22 +265,17 @@ def twister(
         max_path_len: A path length limit when finding linkages.
         rib_width: The ribbon width.
         rib_height: The ribbon height.
-        colormap: Specify to use a colormap to set the ribbon color.
-            One of 'default' or 'norm'.
+        color_top: How to color the top of the ribbons.
+        color_bottom: How to color the bottom of the ribbons.
         gum_twist: Whether to enable the Twister Gum variant.
     """
 
     atoms = check_atoms(atoms, session)
 
-    if colormap is None:
-        colormap = None
-    elif colormap == "default":
-        colormap = dihedral_colormap
-    elif colormap == "norm":
-        colormap = dihedral_norm_colormap
-    else:
-        raise ValueError(f"{colormap!r} is not a valid color map name")
+    cmap_top = linkage_color(color_top)
+    cmap_bottom = linkage_color(color_bottom)
 
+    all_models: dict[bytes, TwisterModel]
     if replace:
         all_models = {m.atoms.hash(): m for m in session.models.list(type=TwisterModel)}
     else:
@@ -247,7 +298,8 @@ def twister(
                 max_path_len=max_path_len,
                 rib_width=rib_width,
                 rib_height=rib_height,
-                colormap=colormap,
+                cmap_top=cmap_top,
+                cmap_bottom=cmap_bottom,
                 gum_twist=gum_twist,
             )
             new = True
@@ -260,7 +312,8 @@ def twister(
                 max_path_len=max_path_len,
                 rib_width=rib_width,
                 rib_height=rib_height,
-                colormap=colormap,
+                cmap_top=cmap_top,
+                cmap_bottom=cmap_bottom,
                 gum_twist=gum_twist,
             )
             new = False
@@ -296,10 +349,10 @@ def twister(
         ("max_ring_size", IntArg),
         ("max_path_len", IntArg),
         ("radius", FloatArg),
-        ("colormap", EnumOf(("default", "norm"))),
+        ("color", Or(ColorArg, EnumOf(("default", "norm")))),
         ("candy_cane", BoolArg),
         ("sphere_radius", FloatArg),
-        ("sphere_colormap", EnumOf(("paperchain",))),
+        ("sphere_color", Or(ColorArg, EnumOf(("paperchain",)))),
     ],
     synopsis="Adds a Strand visualization to structures.",
 )
@@ -311,10 +364,10 @@ def strand(
     max_ring_size=10,
     max_path_len=5,
     radius=0.75,
-    colormap="default",
+    color: LinkageColor = "default",
     candy_cane=False,
     sphere_radius=None,
-    sphere_colormap=None,
+    sphere_color: RingColor | None = None,
 ):
     """
     Adds a Strand visualization to structures.
@@ -327,31 +380,25 @@ def strand(
         max_ring_size: A ring size limit when finding rings.
         max_path_len: A path length limit when finding linkages.
         radius: The radius of the tubes.
-        colormap: The colormap used to set the tube color.
+        color: How to color the tubes.
         candy_cane: Whether to enable the Candy Cane variant.
-            One of 'default' or 'norm'.
         sphere_radius: Specify to render spheres at each ring.
-        sphere_colormap: The colormap used to set the sphere color.
-            One of: 'paperchain'.
+        sphere_color: How to color the spheres.
     """
 
     atoms = check_atoms(atoms, session)
 
-    if colormap == "default":
-        colormap = dihedral_colormap
-    elif colormap == "norm":
-        colormap = dihedral_norm_colormap
-    else:
-        raise ValueError(f"{colormap!r} is not a valid color map name")
+    cmap = linkage_color(color)
 
     if sphere_radius is None:
         sphere_radius = radius
 
-    if sphere_colormap == "paperchain":
-        sphere_colormap = paperchain_colormap
-    elif sphere_colormap is not None:
-        raise ValueError(f"{sphere_colormap!r} is not a valid sphere color map name")
+    if sphere_color is not None:
+        sphere_cmap = ring_color(sphere_color)
+    else:
+        sphere_cmap = None
 
+    all_models: dict[bytes, StrandModel]
     if replace:
         all_models = {m.atoms.hash(): m for m in session.models.list(type=StrandModel)}
     else:
@@ -371,10 +418,10 @@ def strand(
                 max_ring_size=max_ring_size,
                 max_path_len=max_path_len,
                 radius=radius,
-                colormap=colormap,
+                cmap=cmap,
                 candy_cane=candy_cane,
                 sphere_radius=sphere_radius,
-                sphere_colormap=sphere_colormap,
+                sphere_cmap=sphere_cmap,
             )
             new = True
         else:
@@ -383,10 +430,10 @@ def strand(
                 max_ring_size=max_ring_size,
                 max_path_len=max_path_len,
                 radius=radius,
-                colormap=colormap,
+                cmap=cmap,
                 candy_cane=candy_cane,
                 sphere_radius=sphere_radius,
-                sphere_colormap=sphere_colormap,
+                sphere_cmap=sphere_cmap,
             )
             new = False
 
@@ -396,7 +443,7 @@ def strand(
             if replace:
                 # remove other models that overlap this one
                 for m in all_models.values():
-                    m: PaperChainModel
+                    m: StrandModel
                     if m.structure != model.structure:
                         continue
                     if m.atoms.intersects(model_atoms):
@@ -416,7 +463,7 @@ def strand(
 @cmd(
     required=[("bonds", Or(BondsArg, EmptyArg))],
     keyword=[
-        ("colormap", EnumOf(("default", "norm"))),
+        ("color", Or(ColorArg, EnumOf(("default", "norm")))),
         ("max_ring_size", IntArg),
         ("max_path_len", IntArg),
     ],
@@ -425,7 +472,7 @@ def strand(
 def color_bydihedral(
     session: Session,
     bonds: Bonds | None,
-    colormap="default",
+    color: LinkageColor = "default",
     max_ring_size=10,
     max_path_len=5,
 ):
@@ -434,7 +481,7 @@ def color_bydihedral(
 
     Args:
         bonds: The bonds to color.
-        colormap: The colormap to use. One of 'default' or 'norm'.
+        color: How to color the bonds.
         max_ring_size: A ring size limit when finding rings.
         max_path_len: A path length limit when finding linkages.
     """
@@ -442,16 +489,11 @@ def color_bydihedral(
     if bonds is None:
         bonds = all_bonds(session)
 
-    if colormap == "default":
-        colormap = dihedral_colormap
-    elif colormap == "norm":
-        colormap = dihedral_norm_colormap
-    else:
-        raise ValueError(f"{colormap!r} is not a valid color map name")
+    cmap = linkage_color(color)
 
     color_linkage_bonds(
         bonds,
-        colormap,
+        cmap,
         max_ring_size=max_ring_size,
         max_path_len=max_path_len,
     )

@@ -20,18 +20,18 @@ from ._carbs cimport atom_coord, atoms_coords, ring_get_centroid_and_normal
 from ._utils cimport *
 
 ctypedef PyObject *RingSphereMapKey
-ctypedef (vector[int], vector[Color]) RingSphereMapT
+ctypedef (vector[int], vector[CyColor]) RingSphereMapT
 ctypedef map[RingSphereMapKey, RingSphereMapT] RingSphereMap
 
 cdef inline void ring_sphere_add(
     RingSphereMap &ring_spheres,
     PyObject *ring,
     int offset,
-    Color color,
+    CyColor color,
 ):
     it = ring_spheres.find(ring)
     if it == ring_spheres.end():
-        v = pair[RingSphereMapKey, RingSphereMapT](ring, (vector[int](), vector[Color]()))
+        v = pair[RingSphereMapKey, RingSphereMapT](ring, (vector[int](), vector[CyColor]()))
         p = ring_spheres.insert(v)
         it = p.first
 
@@ -43,11 +43,11 @@ cdef void draw_tube(
     vector[Vec] &vertices,
     vector[Vec] &normals,
     vector[(int, int, int)] &triangles,
-    vector[Color] &vcolors,
+    vector[CyColor] &vcolors,
     RingSphereMap &ring_spheres,
     object linkage,
-    Color color_a,
-    Color color_b,
+    CyColor color_a,
+    CyColor color_b,
     double radius,
     bint candy_cane,
     int segment_subdivisions,
@@ -271,10 +271,10 @@ cdef void draw_sphere(
     vector[Vec] &vertices,
     vector[Vec] &normals,
     vector[(int, int, int)] &triangles,
-    vector[Color] &vcolors,
+    vector[CyColor] &vcolors,
     object ring,
-    Color color_a,
-    Color color_b,
+    CyColor color_a,
+    CyColor color_b,
     double radius,
     bint candy_cane,
     int circle_subdivisions,
@@ -423,15 +423,19 @@ cdef void draw_sphere(
 
 def update_graphics(object model not None):
     cdef double radius = model.radius
-    colormap = model.dihedral_colormap
     cdef bint candy_cane = model.candy_cane
-    cdef double sphere_radius = model.sphere_radius
-    sphere_colormap = model.sphere_colormap
+
+    cdef np.ndarray color_np
+    cmap = model.cmap
+    if not callable(cmap):
+        color_np = cmap.rgba
+        color_a = color_from_array(<float *>color_np.data)
+        cmap = None
 
     cdef vector[Vec] vertices
     cdef vector[Vec] normals
     cdef vector[(int, int, int)] triangles
-    cdef vector[Color] vcolors
+    cdef vector[CyColor] vcolors
     cdef vector[(int, int)] r2t
     cdef vector[int] t2r
     cdef vector[(int, int)] l2t
@@ -440,18 +444,19 @@ def update_graphics(object model not None):
     cdef int segment_subdivisions = 20
     cdef int circle_subdivisions = 16
 
-    color_b = Color(1, 1, 1, 1)
+    color_b = CyColor(1, 1, 1, 1)
 
     cdef RingSphereMap ring_spheres
 
     cdef int i
-    cdef np.ndarray color_np
     cdef list linkages = model.linkages
 
     for i in range(len(linkages)):
         link = linkages[i]
-        color_np = colormap(link)
-        color_a = color_from_array(<float *>color_np.data)
+
+        if cmap is not None:
+            color_np = cmap(link).rgba
+            color_a = color_from_array(<float *>color_np.data)
 
         tri_before = triangles.size()
         draw_tube(
@@ -475,14 +480,19 @@ def update_graphics(object model not None):
             t2l.push_back(i)
             t2r.push_back(-1)
 
-    sphere_radius = max(sphere_radius, radius)
-
+    cdef double sphere_radius = model.sphere_radius
     cdef bint sphere_candy_cane
-    if sphere_radius == radius:
+    if sphere_radius <= radius:
+        sphere_radius = radius
         sphere_candy_cane = candy_cane
-        sphere_colormap = None
     else:
         sphere_candy_cane = False
+
+    sphere_cmap = model.sphere_cmap
+    if sphere_cmap is not None and not callable(sphere_cmap):
+        color_np = sphere_cmap.rgba
+        color_a = color_from_array(<float *>color_np.data)
+        sphere_cmap = None
 
     cdef int offset, j
 
@@ -491,12 +501,13 @@ def update_graphics(object model not None):
         ring = rings[i]
         offset_list, color_list = ring_spheres[<PyObject *>ring]
 
-        if sphere_colormap is not None:
-            color_np = sphere_colormap(ring)
-            color_a = color_from_array(<float *>color_np.data)
+        if sphere_radius != radius:
+            if sphere_cmap is not None:
+                color_np = sphere_cmap(ring).rgba
+                color_a = color_from_array(<float *>color_np.data)
         else:
             # get average color
-            color_a = Color(0, 0, 0, 0)
+            color_a = CyColor(0, 0, 0, 0)
             for c in color_list:
                 color_a = color_add(color_a, c)
             color_a = color_scale(1.0 / color_list.size(), color_a)

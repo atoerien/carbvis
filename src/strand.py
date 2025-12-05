@@ -4,7 +4,8 @@ from typing import Callable
 
 import numpy as np
 from chimerax.atomic import AtomicStructures, Atoms
-from chimerax.core.models import Model, PickedModel
+from chimerax.core.colors import Color
+from chimerax.core.models import MODEL_COLOR_CHANGED, Model, PickedModel
 from chimerax.core.session import Session
 from chimerax.graphics import Drawing, PickedTriangle, PickedTriangles
 
@@ -22,7 +23,7 @@ from .carbs import (
     find_rings,
 )
 from .model import CarbVisModel
-from .utils import FloatArray, IntArray
+from .utils import IntArray
 
 STRAND_STATE_VERSION = 1
 
@@ -38,10 +39,10 @@ class StrandModel(CarbVisModel):
         max_ring_size: int,
         max_path_len: int,
         radius: float,
-        colormap: Callable[[CarbLinkage], FloatArray],
+        cmap: Callable[[CarbLinkage], Color] | Color,
         candy_cane: bool,
         sphere_radius: float,
-        sphere_colormap: Callable[[CarbRing], FloatArray] | None,
+        sphere_cmap: Callable[[CarbRing], Color] | Color | None,
     ):
         super().__init__(session, atoms, name, update=update)
 
@@ -50,10 +51,10 @@ class StrandModel(CarbVisModel):
         self.max_ring_size = max_ring_size
         self.max_path_len = max_path_len
         self.radius = radius
-        self.dihedral_colormap = colormap
+        self.cmap = cmap
         self.candy_cane = candy_cane
         self.sphere_radius = sphere_radius
-        self.sphere_colormap = sphere_colormap
+        self.sphere_cmap = sphere_cmap
 
         # only rings included in one or more linkages
         self.rings: list[CarbRing] | None = None
@@ -71,20 +72,20 @@ class StrandModel(CarbVisModel):
         max_ring_size: int,
         max_path_len: int,
         radius: float,
-        colormap: Callable[[CarbLinkage], FloatArray],
+        cmap: Callable[[CarbLinkage], Color] | Color,
         candy_cane: bool,
         sphere_radius: float,
-        sphere_colormap: Callable[[CarbRing], FloatArray] | None,
+        sphere_cmap: Callable[[CarbRing], Color] | Color | None,
     ):
         self.auto_update = update
 
         self.max_ring_size = max_ring_size
         self.max_path_len = max_path_len
         self.radius = radius
-        self.dihedral_colormap = colormap
+        self.cmap = cmap
         self.candy_cane = candy_cane
         self.sphere_radius = sphere_radius
-        self.sphere_colormap = sphere_colormap
+        self.sphere_cmap = sphere_cmap
 
         self.rings = None
         self.linkages = None
@@ -100,6 +101,21 @@ class StrandModel(CarbVisModel):
         self.triangle_to_link = None
 
         self.update_selection()
+
+    def _get_overall_color(self):
+        if isinstance(self.cmap, Color):
+            if self.sphere_cmap is None or self.cmap == self.sphere_cmap:
+                return self.cmap
+        return None
+
+    def _set_overall_color(self, color):
+        c = Color(color)
+        self.cmap = c
+        self.sphere_cmap = c
+        self.session.triggers.activate_trigger(MODEL_COLOR_CHANGED, self)
+        self._update_graphics()
+
+    overall_color = model_color = property(_get_overall_color, _set_overall_color)
 
     @line_profile
     def _do_update(self, *, structure_changed, coords_changed):
@@ -277,10 +293,10 @@ class StrandModel(CarbVisModel):
             "max_ring_size": self.max_ring_size,
             "max_path_len": self.max_path_len,
             "radius": self.radius,
-            "colormap": self.colormap,
+            "cmap": self.cmap,
             "candy_cane": self.candy_cane,
             "sphere_radius": self.sphere_radius,
-            "sphere_colormap": self.sphere_colormap,
+            "sphere_cmap": self.sphere_cmap,
         }
         data["model state"] = Model.take_snapshot(self, session, flags)
         if not self.auto_update:
@@ -299,10 +315,10 @@ class StrandModel(CarbVisModel):
             max_ring_size=data["max_ring_size"],
             max_path_len=data["max_path_len"],
             radius=data["radius"],
-            colormap=data["colormap"],
+            cmap=data["cmap"],
             candy_cane=data["candy_cane"],
             sphere_radius=data["sphere_radius"],
-            sphere_colormap=data["sphere_colormap"],
+            sphere_cmap=data["sphere_cmap"],
         )
         ret.set_state_from_snapshot(session, data)
         return ret

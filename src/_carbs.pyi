@@ -1,11 +1,13 @@
+from chimerax.core.colors import Color
+
 from .carbs import CarbRing
-from .utils import FloatArray, Frame
+from .utils import Frame
 
 def ring_get_centroid_py(ring: CarbRing): ...
 def ring_get_centroid_and_normal_py(ring: CarbRing): ...
 def ring_get_frame_py(ring: CarbRing) -> Frame: ...
 def ring_calc_pucker_amplitude_py(ring: CarbRing) -> float: ...
-def paperchain_colormap(ring: CarbRing) -> FloatArray:
+def paperchain_colormap(ring: CarbRing) -> Color:
     """
     Calculate the color for a ring, using the PaperChain algorithm.
 

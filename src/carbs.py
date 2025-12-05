@@ -4,6 +4,7 @@ from typing import Self, cast
 
 import numpy as np
 from chimerax.atomic import Atom, Atoms, Bond, Bonds, Element, Residue, Residues, Ring
+from chimerax.core.colors import Color
 from chimerax.core.commands import run
 from chimerax.core.session import Session
 from chimerax.core.state import State
@@ -525,32 +526,34 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
 
 
 @line_profile
-def dihedral_norm_colormap(linkage: CarbLinkage) -> FloatArray:
+def dihedral_norm_colormap(linkage: CarbLinkage) -> Color:
     angles = linkage.calc_angles()
     n = angles.shape[0]
     if n == 0:
-        return np.zeros(4, dtype=np.float32)
+        return Color((1.0, 1.0, 1.0, 1.0))
 
     v = np.linalg.norm(angles)
     v /= np.sqrt(n) * 180
 
-    ret = np.empty(4, dtype=np.float32)
-    ret[0] = 1
-    ret[1] = 0.7 * (1 - v)
-    ret[2] = 0.7 * (1 - v)
-    ret[3] = 1
-    return ret
+    return Color(
+        (
+            1.0,
+            0.7 * (1 - v),
+            0.7 * (1 - v),
+            1.0,
+        )
+    )
 
 
 @line_profile
-def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
+def dihedral_colormap(linkage: CarbLinkage) -> Color:
     angles = linkage.calc_angles()
 
     n = angles.shape[0]
     if n < 2 or n > 3:
         log = linkage.session.logger
         log.warning(f"linkage {linkage} has {n} angles, cannot calculate color")
-        return np.ones(4, dtype=np.float32)
+        return Color((1.0, 1.0, 1.0, 1.0))
 
     link_type = linkage.start_ring.residue.name[:1].lower()
     if link_type not in ("a", "b"):
@@ -558,7 +561,7 @@ def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
         log.warning(
             f"linkage {linkage} has an unknown type {link_type!r}, cannot calculate color"
         )
-        return np.ones(4, dtype=np.float32)
+        return Color((1.0, 1.0, 1.0, 1.0))
 
     if n == 2:
         phi, psi = angles
@@ -596,11 +599,11 @@ def dihedral_colormap(linkage: CarbLinkage) -> FloatArray:
     #     )
     #     print(f"v={v}\n")
 
-    ret = np.empty(4, dtype=np.float32)
-
-    ret[0] = 1
-    ret[1] = 0.7 * (1 - v)
-    ret[2] = 0.7 * (1 - v)
-    ret[3] = 1
-
-    return ret
+    return Color(
+        (
+            1.0,
+            0.7 * (1 - v),
+            0.7 * (1 - v),
+            1.0,
+        )
+    )

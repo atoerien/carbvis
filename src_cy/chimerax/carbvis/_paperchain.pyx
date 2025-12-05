@@ -4,7 +4,6 @@
 
 import numpy as np
 
-from .carbs import paperchain_colormap
 from .utils import color_float_to_ubyte
 
 from libc.math cimport sqrt
@@ -60,10 +59,10 @@ cdef void draw_ring(
     vector[Vec] &vertices,
     vector[Vec] &normals,
     vector[(int, int, int)] &triangles,
-    vector[Color] &vcolors,
+    vector[CyColor] &vcolors,
     vector[(float, float)] &texcoords,
     object ring,
-    Color color,
+    CyColor color,
     float bipyramid_height,
 ):
     coords = atoms_coords(ring.atoms)
@@ -141,22 +140,30 @@ cdef void draw_ring(
 def update_graphics(object model not None):
     cdef double bipyramid_height = model.bipyramid_height
 
+    cdef np.ndarray color_np
+    cmap = model.cmap
+    if not callable(cmap):
+        color_np = cmap.rgba
+        color = color_from_array(<float *>color_np.data)
+        cmap = None
+
     cdef vector[Vec] vertices
     cdef vector[Vec] normals
     cdef vector[(int, int, int)] triangles
-    cdef vector[Color] vcolors
+    cdef vector[CyColor] vcolors
     cdef vector[(float, float)] texcoords
     cdef vector[(int, int)] r2t
     cdef vector[int] t2r
 
     cdef int i
-    cdef np.ndarray color_np
     cdef list rings = model.rings
 
     for i in range(len(rings)):
         ring = rings[i]
-        color_np = paperchain_colormap(ring)
-        color = color_from_array(<float *>color_np.data)
+
+        if cmap is not None:
+            color_np = cmap(ring).rgba
+            color = color_from_array(<float *>color_np.data)
 
         tri_before = triangles.size()
         draw_ring(

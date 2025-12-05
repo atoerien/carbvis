@@ -207,38 +207,38 @@ cdef void frame_align(CyFrame &frame, const Vec &forward) noexcept
 cdef class Frame:
     cdef CyFrame frame
 
-cdef packed struct Color:
+cdef packed struct CyColor:
     float r
     float g
     float b
     float a
 
-cdef inline Color color_from_array(const float *arr) noexcept:
-    cdef Color ret
+cdef inline CyColor color_from_array(const float *arr) noexcept:
+    cdef CyColor ret
     ret.r = arr[0]
     ret.g = arr[1]
     ret.b = arr[2]
     ret.a = arr[3]
     return ret
 
-cdef inline Color color_to_array(const Color &c, float *arr) noexcept:
+cdef inline CyColor color_to_array(const CyColor &c, float *arr) noexcept:
     arr[0] = c.r
     arr[1] = c.g
     arr[2] = c.b
     arr[3] = c.a
 
-cdef inline Color color_add(const Color &a, const Color &b) noexcept:
+cdef inline CyColor color_add(const CyColor &a, const CyColor &b) noexcept:
     """a + b"""
-    cdef Color ret
+    cdef CyColor ret
     ret.r = a.r + b.r
     ret.g = a.g + b.g
     ret.b = a.b + b.b
     ret.a = a.a + b.a
     return ret
 
-cdef inline Color color_scale(float a, const Color &b) noexcept:
+cdef inline CyColor color_scale(float a, const CyColor &b) noexcept:
     """a * b"""
-    cdef Color ret
+    cdef CyColor ret
     ret.r = a * b.r
     ret.g = a * b.g
     ret.b = a * b.b

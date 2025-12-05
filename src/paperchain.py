@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 from chimerax.atomic import AtomicStructures, Atoms
-from chimerax.core.models import Model, PickedModel
+from chimerax.core.colors import Color
+from chimerax.core.models import MODEL_COLOR_CHANGED, Model, PickedModel
 from chimerax.core.session import Session
 from chimerax.graphics import Drawing, PickedTriangle, PickedTriangles, Texture
 
@@ -72,6 +75,7 @@ class PaperChainModel(CarbVisModel):
         update: bool,
         bipyramid_height: float,
         max_ring_size: int,
+        cmap: Callable[[CarbRing], Color] | Color,
         tex_formula: str | None,
         tex_period: int,
         tex_duty: float,
@@ -82,6 +86,7 @@ class PaperChainModel(CarbVisModel):
 
         self.bipyramid_height = bipyramid_height
         self.max_ring_size = max_ring_size
+        self.cmap = cmap
 
         self.rings: list[CarbRing] | None = None
         self.ring_to_triangle: IntArray | None = None
@@ -99,6 +104,7 @@ class PaperChainModel(CarbVisModel):
         update: bool,
         bipyramid_height: float,
         max_ring_size: int,
+        cmap: Callable[[CarbRing], Color] | Color,
         tex_formula: str | None,
         tex_period: int,
         tex_duty: float,
@@ -107,6 +113,7 @@ class PaperChainModel(CarbVisModel):
 
         self.bipyramid_height = bipyramid_height
         self.max_ring_size = max_ring_size
+        self.cmap = cmap
 
         self.tex_formula = tex_formula
         self.tex_period = tex_period
@@ -151,6 +158,18 @@ class PaperChainModel(CarbVisModel):
         self.triangle_to_ring = None
 
         self.update_selection()
+
+    def _get_overall_color(self):
+        if isinstance(self.cmap, Color):
+            return self.cmap
+        return None
+
+    def _set_overall_color(self, color):
+        self.cmap = Color(color)
+        self.session.triggers.activate_trigger(MODEL_COLOR_CHANGED, self)
+        self._update_graphics()
+
+    overall_color = model_color = property(_get_overall_color, _set_overall_color)
 
     @line_profile
     def _do_update(self, *, structure_changed, coords_changed):
@@ -285,6 +304,7 @@ class PaperChainModel(CarbVisModel):
             "update": self.auto_update,
             "bipyramid_height": self.bipyramid_height,
             "max_ring_size": self.max_ring_size,
+            "cmap": self.cmap,
             "tex_formula": self.tex_formula,
             "tex_period": self.tex_period,
             "tex_duty": self.tex_duty,
@@ -305,6 +325,7 @@ class PaperChainModel(CarbVisModel):
             update=data["update"],
             bipyramid_height=data["bipyramid_height"],
             max_ring_size=data["max_ring_size"],
+            cmap=data["cmap"],
             tex_formula=data["tex_formula"],
             tex_period=data["tex_period"],
             tex_duty=data["tex_duty"],

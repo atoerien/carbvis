@@ -3,6 +3,7 @@
 # cython: boundscheck=False, cdivision=True, language_level=3, wraparound=False
 
 import numpy as np
+from chimerax.core.colors import Color
 
 from cython.operator cimport dereference as deref
 from libc.math cimport cos, pi, sin, sqrt
@@ -163,38 +164,36 @@ def paperchain_colormap(object ring):
     coords = atoms_coords(ring.atoms)
     cdef double pucker = ring_calc_pucker_amplitude(coords.data(), coords.size())
 
-    cdef np.ndarray ret = np.empty(4, dtype=np.float32)
-    p_ret = <float *>ret.data
+    cdef np.ndarray rgb = np.empty(3, dtype=np.float32)
+    p_rgb = <float *>rgb.data
 
     # Hot to cold color map:
     # Red -> Yellow -> Green -> Cyan -> Blue -> Magenta
     if pucker < 0.40:
         # Red (1,0,0) -> Yellow (1,1,0)
-        p_ret[0] = 1.0  # red
-        p_ret[1] = pucker * 2.5  # increase green -> yellow
-        p_ret[2] = 0.0
+        p_rgb[0] = 1.0  # red
+        p_rgb[1] = pucker * 2.5  # increase green -> yellow
+        p_rgb[2] = 0.0
     elif pucker < 0.56:
         # Yellow (1,1,0) -> Green (0,1,0)
-        p_ret[0] = 1.0 - (pucker - 0.40) * 6.25  # decrease red -> green
-        p_ret[1] = 1.0
-        p_ret[2] = 0.0
+        p_rgb[0] = 1.0 - (pucker - 0.40) * 6.25  # decrease red -> green
+        p_rgb[1] = 1.0
+        p_rgb[2] = 0.0
     elif pucker < 0.64:
         # Green (0,1,0) -> Cyan (0,1,1)
-        p_ret[0] = 0.0
-        p_ret[1] = 1.0  # green
-        p_ret[2] = (pucker - 0.56) * 12.5  # increase blue
+        p_rgb[0] = 0.0
+        p_rgb[1] = 1.0  # green
+        p_rgb[2] = (pucker - 0.56) * 12.5  # increase blue
     elif pucker < 0.76:
         # Cyan (0,1,1) -> Blue (0,0,1)
-        p_ret[0] = 0.0
-        p_ret[1] = 1.0 - (pucker - 0.64) * 5.0  # decrease green
-        p_ret[2] = 1.0
+        p_rgb[0] = 0.0
+        p_rgb[1] = 1.0 - (pucker - 0.64) * 5.0  # decrease green
+        p_rgb[2] = 1.0
     else:
         # Blue (0,0,1) -> Magenta (1,0,1)
-        p_ret[0] = (pucker - 0.76) * 0.8  # increase red
-        p_ret[1] = 0.0
-        p_ret[2] = 1.0
+        p_rgb[0] = (pucker - 0.76) * 0.8  # increase red
+        p_rgb[1] = 0.0
+        p_rgb[2] = 1.0
 
-    p_ret[3] = 1.0
-
-    return ret
+    return Color(rgb)
 
