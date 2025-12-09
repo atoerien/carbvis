@@ -7,6 +7,7 @@ import numpy as np
 from .utils import color_float_to_ubyte
 
 from cpython.ref cimport PyObject
+from cython.operator cimport dereference as deref
 from libc.math cimport acos, pi, pow, sin
 from libcpp.map cimport map
 from libcpp.pair cimport pair
@@ -23,15 +24,34 @@ from ._carbs cimport (
 )
 from ._utils cimport *
 
-ctypedef PyObject *RingColorMapKey
-ctypedef (CyColor, CyColor) RingColorMapT
-ctypedef map[RingColorMapKey, RingColorMapT] RingColorMap
+ctypedef PyObject *RingDiskMapKey
+ctypedef (vector[int], vector[CyColor], vector[CyColor]) RingDiskMapT
+ctypedef map[RingDiskMapKey, RingDiskMapT] RingDiskMap
+
+cdef inline void ring_disk_add(
+    RingDiskMap &ring_disks,
+    PyObject *ring,
+    int offset,
+    CyColor color_top,
+    CyColor color_bottom,
+):
+    it = ring_disks.find(ring)
+    if it == ring_disks.end():
+        v = pair[RingDiskMapKey, RingDiskMapT](ring, (vector[int](), vector[CyColor](), vector[CyColor]()))
+        p = ring_disks.insert(v)
+        it = p.first
+
+    obj = &deref(it).second
+    deref(obj)[0].push_back(offset)
+    deref(obj)[1].push_back(color_top)
+    deref(obj)[2].push_back(color_bottom)
 
 cdef void draw_ribbon(
     vector[Vec] &vertices,
     vector[Vec] &normals,
     vector[(int, int, int)] &triangles,
     vector[CyColor] &vcolors,
+    RingDiskMap &ring_disks,
     object linkage,
     CyColor color_top,
     CyColor color_bottom,
@@ -267,7 +287,7 @@ cdef void draw_ribbon(
         if i == n - 1:
             continue
 
-        offset = triangle_offset + i * 4
+        offset = triangle_offset + 4 * i
         offset_next = offset + 4
 
         # top 1
@@ -342,7 +362,15 @@ cdef void draw_ribbon(
             )
         )
 
-    if not start_end_centroid:
+    if start_end_centroid:
+        offset = triangle_offset
+        p_ring = <PyObject *>linkage.start_ring
+        ring_disk_add(ring_disks, p_ring, offset, color_top, color_bottom)
+
+        offset = triangle_offset + 4 * (n - 1)
+        p_ring = <PyObject *>linkage.end_ring
+        ring_disk_add(ring_disks, p_ring, offset, color_top, color_bottom)
+    else:
         # TODO: fix weird lighting, probably need to dupe edge vertices
 
         # Draw start and end end caps
@@ -366,7 +394,7 @@ cdef void draw_ribbon(
         )
 
         # End end caps
-        offset = triangle_offset + rib_steps * 4
+        offset = triangle_offset + 4 * rib_steps
 
         triangles.push_back(
             (
@@ -500,14 +528,6 @@ cdef void draw_disk(
             )
         )
 
-cdef inline void ring_color_add(
-    RingColorMap &ring_colors,
-    PyObject *ring,
-    (CyColor, CyColor) color,
-):
-    v = pair[RingColorMapKey, RingColorMapT](ring, color)
-    ring_colors.insert(v)
-
 def update_graphics(object model not None):
     cdef bint start_end_centroid = model.start_end_centroid
     cdef int rib_steps = model.rib_steps
@@ -536,7 +556,7 @@ def update_graphics(object model not None):
     cdef vector[(int, int)] l2t
     cdef vector[int] t2l
 
-    cdef RingColorMap ring_colors
+    cdef RingDiskMap ring_disks
 
     cdef int i
     cdef list linkages = model.linkages
@@ -558,21 +578,13 @@ def update_graphics(object model not None):
                 color_np = cmap_bottom(link).rgba
                 color_bottom = color_from_array(<float *>color_np.data)
 
-        if (
-            (cmap_top is not None or cmap_bottom is not None)
-            and start_end_centroid
-        ):
-            p_ring = <PyObject *>link.start_ring
-            ring_color_add(ring_colors, p_ring, (color_top, color_bottom))
-            p_ring = <PyObject *>link.end_ring
-            ring_color_add(ring_colors, p_ring, (color_top, color_bottom))
-
         tri_before = triangles.size()
         draw_ribbon(
             vertices,
             normals,
             triangles,
             vcolors,
+            ring_disks,
             link,
             color_top,
             color_bottom,
@@ -589,6 +601,7 @@ def update_graphics(object model not None):
             t2l.push_back(i)
             t2r.push_back(-1)
 
+    cdef int offset
     cdef list rings
 
     if start_end_centroid:
@@ -597,9 +610,18 @@ def update_graphics(object model not None):
             ring = rings[i]
 
             if cmap_top is not None or cmap_bottom is not None:
-                color_top, color_bottom = ring_colors[<PyObject *>ring]
+                offset_list, color_top_list, color_bottom_list = ring_disks[<PyObject *>ring]
 
-                # TODO: blend colors
+                color_top = colors_avg(color_top_list)
+                color_bottom = colors_avg(color_bottom_list)
+
+                # overwrite vcolors for each adjacent frame
+                # this blends colors through the ring
+                for offset in offset_list:
+                    vcolors[offset] = color_top  # top right
+                    vcolors[offset + 1] = color_bottom  # bottom right
+                    vcolors[offset + 2] = color_bottom  # bottom left
+                    vcolors[offset + 3] = color_top  # top left
 
             tri_before = triangles.size()
             draw_disk(

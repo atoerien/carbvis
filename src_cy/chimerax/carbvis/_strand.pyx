@@ -506,11 +506,7 @@ def update_graphics(object model not None):
                 color_np = sphere_cmap(ring).rgba
                 color_a = color_from_array(<float *>color_np.data)
         else:
-            # get average color
-            color_a = CyColor(0, 0, 0, 0)
-            for c in color_list:
-                color_a = color_add(color_a, c)
-            color_a = color_scale(1.0 / color_list.size(), color_a)
+            color_a = colors_avg(color_list)
 
             if sphere_radius == radius:
                 # overwrite vcolors for each adjacent frame

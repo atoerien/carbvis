@@ -187,7 +187,7 @@ class RingColorArg(CarbColorArg):
     name = "a color or a ring colormap"
 
     cmaps: dict[str, tuple[Callable, dict[str, tuple[type, ...]]]] = {
-        "default": (
+        "paperchain": (
             paperchain_colormap,
             {},
         ),

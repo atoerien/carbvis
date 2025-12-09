@@ -4,7 +4,7 @@
 import numpy as np
 
 from cython cimport floating
-from libc.math cimport sqrt
+from libc.math cimport sqrt, pow
 from libcpp.vector cimport vector
 
 cimport numpy as np
@@ -227,20 +227,47 @@ cdef inline CyColor color_to_array(const CyColor &c, float *arr) noexcept:
     arr[2] = c.b
     arr[3] = c.a
 
-cdef inline CyColor color_add(const CyColor &a, const CyColor &b) noexcept:
-    """a + b"""
-    cdef CyColor ret
-    ret.r = a.r + b.r
-    ret.g = a.g + b.g
-    ret.b = a.b + b.b
-    ret.a = a.a + b.a
-    return ret
+cdef inline CyColor colors_avg(const vector[CyColor] &colors) noexcept:
+    """Calculate the average of a list of colors linearly (with gamma=2.2 correction)"""
 
-cdef inline CyColor color_scale(float a, const CyColor &b) noexcept:
-    """a * b"""
-    cdef CyColor ret
-    ret.r = a * b.r
-    ret.g = a * b.g
-    ret.b = a * b.b
-    ret.a = a * b.a
+    cdef int n = colors.size()
+
+    ret = CyColor(0, 0, 0, 0)
+
+    if n == 0:
+        return ret
+
+    cdef int i
+    for i in range(n):
+        color = colors[i]
+
+        # linearize
+        ret.r += pow(color.r, 2.2)
+        ret.g += pow(color.g, 2.2)
+        ret.b += pow(color.b, 2.2)
+
+        # blend alpha directly
+        ret.a += color.a
+
+    # average
+    ret.r /= n
+    ret.g /= n
+    ret.b /= n
+    ret.a /= n
+
+    # avoid pow() with negative base
+    if ret.r < 0:
+        ret.r = 0
+    if ret.g < 0:
+        ret.g = 0
+    if ret.b < 0:
+        ret.b = 0
+    if ret.a < 0:
+        ret.a = 0
+
+    # delinearize
+    ret.r = pow(ret.r, (1 / 2.2))
+    ret.g = pow(ret.g, (1 / 2.2))
+    ret.b = pow(ret.b, (1 / 2.2))
+
     return ret
