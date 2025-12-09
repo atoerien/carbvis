@@ -1,17 +1,23 @@
-from typing import Callable, Literal, ParamSpec, Protocol, TypeVar, Union, cast
+import ast
+import functools
+from typing import Callable, ParamSpec, Protocol, TypeVar, cast
 
 from chimerax.atomic import Atoms, Bonds, all_atoms, all_bonds
 from chimerax.atomic.args import AtomsArg, BondsArg
-from chimerax.core.colors import Color
+from chimerax.core.colors import Color, Colormap
 from chimerax.core.commands import (
+    Annotation,
+    AnnotationError,
     BoolArg,
     CmdDesc,
     ColorArg,
+    ColormapArg,
     EmptyArg,
     EnumOf,
     FloatArg,
     IntArg,
     Or,
+    commas,
 )
 from chimerax.core.errors import UserError
 from chimerax.core.session import Session
@@ -21,6 +27,7 @@ from .carbs import (
     CarbRing,
     dihedral_colormap,
     dihedral_norm_colormap,
+    dihedral_simple_colormap,
     paperchain_colormap,
 )
 from .coloring import color_linkage_bonds
@@ -71,42 +78,152 @@ def cmd(
     return decorator
 
 
-RingColor = Union[
-    Literal["paperchain"],
-    Callable[[CarbRing], Color],
-    Color,
-]
+def next_expr(text: str):
+    try:
+        node = ast.parse(text, mode="eval")
+        return node, text, ""
+    except SyntaxError as e:
+        offset = e.offset
+        if offset is None or offset == 0:
+            raise
+        offset -= 1
+        if not text[offset - 1].isspace():
+            raise
+
+    while text[offset - 1].isspace():
+        offset -= 1
+
+    rest = text[offset:]
+    text = text[:offset]
+    node = ast.parse(text, mode="eval")
+    return node, text, rest
 
 
-def ring_color(color: RingColor):
-    if color == "paperchain":
-        return paperchain_colormap
-    elif callable(color):
-        return color
-    elif isinstance(color, Color):
-        return color
+def next_funclike_expr(text: str):
+    try:
+        node, text, rest = next_expr(text)
+    except SyntaxError:
+        raise AnnotationError("expected name, string or call") from None
+
+    kwargs = {}
+
+    body = node.body
+    if isinstance(body, ast.Name):
+        fn = body.id
+    elif isinstance(body, ast.Constant) and type(body.value) is str:
+        fn = body.value
+    elif isinstance(body, ast.Call) and isinstance(body.func, ast.Name):
+        fn = body.func.id
+        if len(body.args) != 0:
+            raise ValueError("may only use keyword arguments")
+        for kw in body.keywords:
+            arg = kw.arg
+            try:
+                value = ast.literal_eval(kw.value)
+            except ValueError:
+                raise ValueError("may only use literal argument values") from None
+            kwargs[arg] = value
     else:
-        raise ValueError(f"{color!r} is not a valid color map")
+        raise AnnotationError("expected name, string or call")
+
+    return (fn, kwargs), text, rest
 
 
-LinkageColor = Union[
-    Literal["default", "norm"],
-    Callable[[CarbLinkage], Color],
-    Color,
-]
+class CarbColorArg(Annotation):
+    name = "a color or a colormap"
+
+    cmaps: dict[str, tuple[Callable, dict[str, tuple[type, ...]]]]
+
+    @classmethod
+    def parse(cls, text: str, session: Session):  # pyright: ignore[reportIncompatibleMethodOverride]
+        try:
+            return ColorArg.parse(text, session)
+        except AnnotationError:
+            pass
+
+        try:
+            (fn, kwargs), text, rest = next_funclike_expr(text)
+        except AnnotationError:
+            raise AnnotationError(f"expected {cls.name}") from None
+
+        if fn not in cls.cmaps:
+            raise ValueError(f"{fn!r} is not a valid color map")
+
+        cmap, argdef = cls.cmaps[fn]
+
+        partial_kwargs = {}
+        for k, v in kwargs.items():
+            if k not in argdef:
+                expected = commas(repr(x) for x in argdef)
+                raise ValueError(f"invalid arg {k!r}, expected {expected}")
+            typ = argdef[k]
+
+            if Colormap in typ:
+                if v == "default":
+                    # skip, don't forward to cmap
+                    continue
+                try:
+                    v, _, _ = ColormapArg.parse(repr(v), session)
+                except AnnotationError:
+                    pass
+
+            if not isinstance(v, typ):
+                expected = commas(x.__name__ for x in typ)
+                raise ValueError(f"expected {expected} for arg {k!r}")
+
+            partial_kwargs[k] = v
+
+        if partial_kwargs:
+            f = functools.partial(cmap, **partial_kwargs)
+        else:
+            f = cmap
+        return f, text, rest
 
 
-def linkage_color(color: LinkageColor):
-    if color == "default":
-        return dihedral_colormap
-    elif color == "norm":
-        return dihedral_norm_colormap
-    elif callable(color):
-        return color
-    elif isinstance(color, Color):
-        return color
-    else:
-        raise ValueError(f"{color!r} is not a valid color map")
+RingColor = Callable[[CarbRing], Color] | Color
+
+
+class RingColorArg(CarbColorArg):
+    name = "a color or a ring colormap"
+
+    cmaps: dict[str, tuple[Callable, dict[str, tuple[type, ...]]]] = {
+        "default": (
+            paperchain_colormap,
+            {},
+        ),
+    }
+
+
+LinkageColor = Callable[[CarbLinkage], Color] | Color
+
+
+class LinkageColorArg(CarbColorArg):
+    name = "a color or a linkage colormap"
+
+    cmaps: dict[str, tuple[Callable, dict[str, tuple[type, ...]]]] = {
+        "default": (
+            dihedral_colormap,
+            {
+                "palette": (Colormap,),
+            },
+        ),
+        "simple": (
+            dihedral_simple_colormap,
+            {
+                "palette": (Colormap,),
+                "phi_min": (float, int),
+                "phi_max": (float, int),
+                "psi_min": (float, int),
+                "psi_max": (float, int),
+            },
+        ),
+        "norm": (
+            dihedral_norm_colormap,
+            {
+                "palette": (Colormap,),
+            },
+        ),
+    }
 
 
 @cmd(
@@ -116,7 +233,7 @@ def linkage_color(color: LinkageColor):
         ("update", BoolArg),
         ("bipyramid_height", FloatArg),
         ("max_ring_size", IntArg),
-        ("color", Or(ColorArg, EnumOf(("paperchain",)))),
+        ("color", RingColorArg),
         ("tex_formula", EnumOf(("stripes", "grid", "diamond", "rings", "waves"))),
         ("tex_period", IntArg),
         ("tex_duty", FloatArg),
@@ -130,7 +247,7 @@ def paperchain(
     update=True,
     bipyramid_height=1.0,
     max_ring_size=10,
-    color: RingColor = "paperchain",
+    color: RingColor = paperchain_colormap,
     tex_formula=None,
     tex_period=128,
     tex_duty=0.5,
@@ -154,8 +271,6 @@ def paperchain(
 
     atoms = check_atoms(atoms, session)
 
-    cmap = ring_color(color)
-
     all_models: dict[bytes, PaperChainModel]
     if replace:
         all_models = {
@@ -177,7 +292,7 @@ def paperchain(
                 update=update,
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
-                cmap=cmap,
+                cmap=color,
                 tex_formula=tex_formula,
                 tex_period=tex_period,
                 tex_duty=tex_duty,
@@ -188,7 +303,7 @@ def paperchain(
                 update=update,
                 bipyramid_height=bipyramid_height,
                 max_ring_size=max_ring_size,
-                cmap=cmap,
+                cmap=color,
                 tex_formula=tex_formula,
                 tex_period=tex_period,
                 tex_duty=tex_duty,
@@ -229,8 +344,8 @@ def paperchain(
         ("max_path_len", IntArg),
         ("rib_width", FloatArg),
         ("rib_height", FloatArg),
-        ("color_top", Or(ColorArg, EnumOf(("default", "norm")))),
-        ("color_bottom", Or(ColorArg, EnumOf(("default", "norm")))),
+        ("color_top", LinkageColorArg),
+        ("color_bottom", LinkageColorArg),
         ("gum_twist", BoolArg),
     ],
     synopsis="Adds a Twister visualization to structures.",
@@ -272,9 +387,6 @@ def twister(
 
     atoms = check_atoms(atoms, session)
 
-    cmap_top = linkage_color(color_top)
-    cmap_bottom = linkage_color(color_bottom)
-
     all_models: dict[bytes, TwisterModel]
     if replace:
         all_models = {m.atoms.hash(): m for m in session.models.list(type=TwisterModel)}
@@ -298,8 +410,8 @@ def twister(
                 max_path_len=max_path_len,
                 rib_width=rib_width,
                 rib_height=rib_height,
-                cmap_top=cmap_top,
-                cmap_bottom=cmap_bottom,
+                cmap_top=color_top,
+                cmap_bottom=color_bottom,
                 gum_twist=gum_twist,
             )
             new = True
@@ -312,8 +424,8 @@ def twister(
                 max_path_len=max_path_len,
                 rib_width=rib_width,
                 rib_height=rib_height,
-                cmap_top=cmap_top,
-                cmap_bottom=cmap_bottom,
+                cmap_top=color_top,
+                cmap_bottom=color_bottom,
                 gum_twist=gum_twist,
             )
             new = False
@@ -349,10 +461,10 @@ def twister(
         ("max_ring_size", IntArg),
         ("max_path_len", IntArg),
         ("radius", FloatArg),
-        ("color", Or(ColorArg, EnumOf(("default", "norm")))),
+        ("color", LinkageColorArg),
         ("candy_cane", BoolArg),
         ("sphere_radius", FloatArg),
-        ("sphere_color", Or(ColorArg, EnumOf(("paperchain",)))),
+        ("sphere_color", RingColorArg),
     ],
     synopsis="Adds a Strand visualization to structures.",
 )
@@ -364,7 +476,7 @@ def strand(
     max_ring_size=10,
     max_path_len=5,
     radius=0.75,
-    color: LinkageColor = "default",
+    color: LinkageColor = dihedral_colormap,
     candy_cane=False,
     sphere_radius=None,
     sphere_color: RingColor | None = None,
@@ -388,15 +500,8 @@ def strand(
 
     atoms = check_atoms(atoms, session)
 
-    cmap = linkage_color(color)
-
     if sphere_radius is None:
         sphere_radius = radius
-
-    if sphere_color is not None:
-        sphere_cmap = ring_color(sphere_color)
-    else:
-        sphere_cmap = None
 
     all_models: dict[bytes, StrandModel]
     if replace:
@@ -418,10 +523,10 @@ def strand(
                 max_ring_size=max_ring_size,
                 max_path_len=max_path_len,
                 radius=radius,
-                cmap=cmap,
+                cmap=color,
                 candy_cane=candy_cane,
                 sphere_radius=sphere_radius,
-                sphere_cmap=sphere_cmap,
+                sphere_cmap=sphere_color,
             )
             new = True
         else:
@@ -430,10 +535,10 @@ def strand(
                 max_ring_size=max_ring_size,
                 max_path_len=max_path_len,
                 radius=radius,
-                cmap=cmap,
+                cmap=color,
                 candy_cane=candy_cane,
                 sphere_radius=sphere_radius,
-                sphere_cmap=sphere_cmap,
+                sphere_cmap=sphere_color,
             )
             new = False
 
@@ -463,7 +568,7 @@ def strand(
 @cmd(
     required=[("bonds", Or(BondsArg, EmptyArg))],
     keyword=[
-        ("color", Or(ColorArg, EnumOf(("default", "norm")))),
+        ("color", LinkageColorArg),
         ("max_ring_size", IntArg),
         ("max_path_len", IntArg),
     ],
@@ -472,7 +577,7 @@ def strand(
 def color_bydihedral(
     session: Session,
     bonds: Bonds | None,
-    color: LinkageColor = "default",
+    color: LinkageColor = dihedral_colormap,
     max_ring_size=10,
     max_path_len=5,
 ):
@@ -489,11 +594,9 @@ def color_bydihedral(
     if bonds is None:
         bonds = all_bonds(session)
 
-    cmap = linkage_color(color)
-
     color_linkage_bonds(
         bonds,
-        cmap,
+        color,
         max_ring_size=max_ring_size,
         max_path_len=max_path_len,
     )

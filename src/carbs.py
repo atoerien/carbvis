@@ -4,7 +4,7 @@ from typing import Self, cast
 
 import numpy as np
 from chimerax.atomic import Atom, Atoms, Bond, Bonds, Element, Residue, Residues, Ring
-from chimerax.core.colors import Color
+from chimerax.core.colors import Color, Colormap
 from chimerax.core.commands import run
 from chimerax.core.session import Session
 from chimerax.core.state import State
@@ -525,8 +525,14 @@ def find_linkages(rings: list[CarbRing], max_len: int) -> list[CarbLinkage]:
     return linkages
 
 
+default_dihedral_palette = Colormap(None, ((1, 0.7, 0.7, 1), (1, 0, 0, 1)))
+
+
 @line_profile
-def dihedral_norm_colormap(linkage: CarbLinkage) -> Color:
+def dihedral_norm_colormap(
+    linkage: CarbLinkage,
+    palette: Colormap = default_dihedral_palette,
+) -> Color:
     angles = linkage.calc_angles()
     n = angles.shape[0]
     if n == 0:
@@ -535,33 +541,67 @@ def dihedral_norm_colormap(linkage: CarbLinkage) -> Color:
     v = np.linalg.norm(angles)
     v /= np.sqrt(n) * 180
 
-    return Color(
-        (
-            1.0,
-            0.7 * (1 - v),
-            0.7 * (1 - v),
-            1.0,
-        )
-    )
+    rgba = palette.interpolated_rgba([v])[0]
+    return Color(rgba)
 
 
 @line_profile
-def dihedral_colormap(linkage: CarbLinkage) -> Color:
+def dihedral_simple_colormap(
+    linkage: CarbLinkage,
+    palette: Colormap = default_dihedral_palette,
+    phi_min=-60,
+    phi_max=60,
+    psi_min=-60,
+    psi_max=60,
+) -> Color:
+    angles = linkage.calc_angles()
+
+    n = angles.shape[0]
+    if n != 2:
+        log = linkage.session.logger
+        log.warning(
+            f"linkage {linkage} has {n} angles,"
+            " cannot calculate color with simple colormap"
+        )
+        return Color(palette.color_no_value)
+
+    phi, psi = angles
+
+    nx = gaussian(phi, 1, (phi_min + phi_max) / 2, abs((phi_min - phi_max) / 2), 2)
+    ny = gaussian(psi, 1, (psi_min + psi_max) / 2, abs((psi_min - psi_max) / 2), 2)
+    v = 1 - nx * ny
+
+    # if v > 0.1:
+    #     print(f"{linkage}:\nangles={angles}\nv={v}")
+
+    rgba = palette.interpolated_rgba([v])[0]
+    return Color(rgba)
+
+
+@line_profile
+def dihedral_colormap(
+    linkage: CarbLinkage,
+    palette: Colormap = default_dihedral_palette,
+) -> Color:
     angles = linkage.calc_angles()
 
     n = angles.shape[0]
     if n < 2 or n > 3:
         log = linkage.session.logger
-        log.warning(f"linkage {linkage} has {n} angles, cannot calculate color")
-        return Color((1.0, 1.0, 1.0, 1.0))
+        log.warning(
+            f"linkage {linkage} has {n} angles,"
+            " cannot calculate color with default colormap"
+        )
+        return Color(palette.color_no_value)
 
     link_type = linkage.start_ring.residue.name[:1].lower()
     if link_type not in ("a", "b"):
         log = linkage.session.logger
         log.warning(
-            f"linkage {linkage} has an unknown type {link_type!r}, cannot calculate color"
+            f"linkage {linkage} has an unknown type {link_type!r},"
+            " cannot calculate color with default colormap"
         )
-        return Color((1.0, 1.0, 1.0, 1.0))
+        return Color(palette.color_no_value)
 
     if n == 2:
         phi, psi = angles
@@ -593,17 +633,7 @@ def dihedral_colormap(linkage: CarbLinkage) -> Color:
         v = 1 - nx * ny * nz
 
     # if v > 0.1:
-    #     print(
-    #         f"{linkage.atoms[0]}->{linkage.atoms[-1]}:\n"
-    #         f"type={link_type} angles={angles}"
-    #     )
-    #     print(f"v={v}\n")
+    #     print(f"{linkage}:\ntype={link_type} angles={angles}\nv={v}")
 
-    return Color(
-        (
-            1.0,
-            0.7 * (1 - v),
-            0.7 * (1 - v),
-            1.0,
-        )
-    )
+    rgba = palette.interpolated_rgba([v])[0]
+    return Color(rgba)
