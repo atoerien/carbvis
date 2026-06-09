@@ -1,0 +1,85 @@
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="../userdocs.css" />
+    <title>Command: color bydihedral</title>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a name="top"></a>
+    <a href="../index.html">
+      <img
+        width="60px"
+        src="../ChimeraX-docs-icon.svg"
+        alt="ChimeraX docs icon"
+        class="clRighticon"
+        title="User Guide Index"
+    /></a>
+
+    <h3><a href="../index.html#commands">Command</a>: color bydihedral</h3>
+
+    <h3 class="usage">
+      <a href="usageconventions.html">Usage</a>: <br /><b>color bydihedral</b>
+      [&nbsp;<a href="atomspec.html#bonds"><i>bond-spec</i></a
+      >&nbsp;] [&nbsp;<b>color</b>&nbsp;&nbsp;<a
+        href="../carbvis.html#linkcmaps"
+        ><i>linkage-colormap</i></a
+      >&nbsp;] [&nbsp;<b>maxRingSize</b>&nbsp;&nbsp;<i>N</i>&nbsp;]
+      [&nbsp;<b>maxPathLen</b>&nbsp;&nbsp;<i>length</i>&nbsp;]
+    </h3>
+
+    <p>
+      The <b>color bydihedral</b> command colors bonds along glycosidic linkages
+      according to the linkage's dihedral angles.
+      <br />
+      Note that <a href="color.html#halfbond">halfbond mode</a> will necessarily
+      be disabled on all bonds colored (i.e. those that form part of a
+      glycosidic linkage).
+    </p>
+
+    <p>
+      If <i>bond-spec</i> is omitted, all bonds in all open atomic structures
+      are used.
+    </p>
+
+    <p>
+      See also:
+      <a href="../carbvis.html"><b>CarbVis</b></a
+      >, <a href="color.html"><b>color</b></a
+      >, <a href="strand.html"><b>strand</b></a
+      >,
+      <a href="twister.html"><b>twister</b></a>
+    </p>
+
+    <blockquote>
+      <b>color</b> &nbsp;<i>linkage-colormap</i>
+      <br />
+      The <a href="../carbvis.html#linkcmaps">linkage colormap</a> used to color
+      the bonds. Defaults to the
+      <a href="../carbvis.html#linkcmap-default"><b>default</b></a> colormap.
+    </blockquote>
+
+    <blockquote>
+      <b>maxRingSize</b> &nbsp;<i>N</i>
+      <br />
+      Maximum ring size considered when identifying carbohydrate rings (default
+      <b>10</b> atoms).
+    </blockquote>
+
+    <blockquote>
+      <b>maxPathLen</b> &nbsp;<i>length</i>
+      <br />
+      The maximum path length in bonds to search when finding linkages between
+      rings (default <b>5</b>).
+    </blockquote>
+
+    <hr />
+    <address>Andre Toerien / University of Cape Town / December 2025</address>
+  </body>
+</html>

@@ -1,0 +1,145 @@
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="../userdocs.css" />
+    <title>Command: paperchain</title>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a name="top"></a>
+    <a href="../index.html">
+      <img
+        width="60px"
+        src="../ChimeraX-docs-icon.svg"
+        alt="ChimeraX docs icon"
+        class="clRighticon"
+        title="User Guide Index"
+    /></a>
+
+    <h3><a href="../index.html#commands">Command</a>: paperchain</h3>
+
+    <h3 class="usage">
+      <a href="usageconventions.html">Usage</a>: <br /><b>paperchain</b>
+      [&nbsp;<a href="atomspec.html"><i>atom-spec</i></a
+      >&nbsp;]
+      [&nbsp;<b>replace</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>update</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>bipyramidHeight</b>&nbsp;&nbsp;<i>height</i>&nbsp;]
+      [&nbsp;<b>maxRingSize</b>&nbsp;&nbsp;<i>N</i>&nbsp;]
+      [&nbsp;<b>color</b>&nbsp;&nbsp;<a href="../carbvis.html#ringcmaps"
+        ><i>ring-colormap</i></a
+      >&nbsp;]
+      [&nbsp;<b>texFormula</b>&nbsp;&nbsp;stripes&nbsp;|&nbsp;grid&nbsp;|&nbsp;diamond&nbsp;|&nbsp;rings&nbsp;|&nbsp;waves&nbsp;]
+      [&nbsp;<b>texPeriod</b>&nbsp;&nbsp;<i>pixels</i>&nbsp;]
+      [&nbsp;<b>texDuty</b>&nbsp;&nbsp;<i>fraction</i>&nbsp;]
+    </h3>
+
+    <p>
+      The <b>paperchain</b> command creates a PaperChain model for the specified
+      atoms. It identifies sugar rings within the specified <i>atom-spec</i> and
+      renders each ring as a bipyramid whose color by default encodes the
+      Cremer-Pople puckering amplitude of that ring, using a hot-to-cold color
+      scale so that unusually puckered (high-energy) rings stand out clearly.
+    </p>
+
+    <p>
+      With <b>texFormula</b>, a texture is added to the "bottom" face of each
+      ring polygon, additionally showing ring orientation.
+    </p>
+
+    <p>
+      PaperChain emphasizes ring puckering twist and absolute ring orientation.
+      For overall backbone shape and linkage torsion-angle coloring, see
+      <a href="strand.html"><b>strand</b></a
+      >. For backbone twist and relative ring orientation, see
+      <a href="twister.html"><b>twister</b></a
+      >.
+    </p>
+
+    <p>
+      If <i>atom-spec</i> is omitted, all atoms in all open atomic structures
+      are used.
+    </p>
+
+    <p>
+      See also:
+      <a href="../carbvis.html"><b>CarbVis</b></a
+      >, <a href="twister.html"><b>twister</b></a
+      >, <a href="strand.html"><b>strand</b></a
+      >,
+    </p>
+
+    <blockquote>
+      <b>replace</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      Whether to remove existing PaperChain models that overlap the new one
+      (default <b>true</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>update</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      Whether to automatically update the model if the structure changes
+      (default <b>true</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>bipyramidHeight</b> &nbsp;<i>height</i>
+      <br />
+      Height of the bipyramid apex above (and below) the ring plane, in &Aring;
+      (default <b>1.0</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>maxRingSize</b> &nbsp;<i>N</i>
+      <br />
+      Maximum ring size considered when identifying carbohydrate rings (default
+      <b>10</b> atoms).
+    </blockquote>
+
+    <blockquote>
+      <b>color</b> &nbsp;<i>ring-colormap</i>
+      <br />
+      The <a href="../carbvis.html#ringcmaps">ring colormap</a> used to color
+      the polygons. Defaults to the <b>paperchain</b> ring colormap, which maps
+      the Cremer-Pople puckering amplitude of each ring to a hot-to-cold color
+      scale, with colors specifically chosen so that the different principal
+      ring conformers can be easily distinguished.
+    </blockquote>
+
+    <blockquote>
+      <b>texFormula</b>
+      &nbsp;stripes&nbsp;|&nbsp;grid&nbsp;|&nbsp;diamond&nbsp;|&nbsp;rings&nbsp;|&nbsp;waves
+      <br />
+      Applies a procedural texture to the bottom face of each ring polygon.
+      Available patterns are
+      <b>waves</b> (parallel sinusoids), <b>stripes</b> (horizontal lines),
+      <b>grid</b> (horizontal and vertical lines), <b>diamond</b> (concentric
+      diamond shapes), and <b>rings</b> (concentric rings).
+      <br />
+      When omitted, no texture is applied.
+    </blockquote>
+
+    <blockquote>
+      <b>texPeriod</b> &nbsp;<i>pixels</i>
+      <br />
+      Pixel distance between repeating texture features (default <b>128</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>texDuty</b> &nbsp;<i>fraction</i>
+      <br />
+      Fractional duty cycle of the repeating texture pattern, in the range [0,
+      1] (default <b>0.5</b>).
+    </blockquote>
+
+    <hr />
+    <address>Andre Toerien / University of Cape Town / December 2025</address>
+  </body>
+</html>

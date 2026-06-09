@@ -19,19 +19,19 @@ classifiers = ["Development Status :: 3 - Alpha"]
 
 [tool.chimerax.command.paperchain]
 category = "General"
-synopsis = "Adds a PaperChain visualization to structures."
+synopsis = "add a PaperChain visualization"
 
 [tool.chimerax.command.twister]
 category = "General"
-synopsis = "Adds a Twister visualization to structures."
+synopsis = "add a Twister visualization"
 
 [tool.chimerax.command.strand]
 category = "General"
-synopsis = "Adds a Strand visualization to structures."
+synopsis = "add a Strand visualization"
 
 [tool.chimerax.command."color bydihedral"]
 category = "General"
-synopsis = "Color bonds by linkage dihedral angles."
+synopsis = "color bonds by linkage dihedral angles"
 
 [tool.chimerax.extension._carbs]
 include-modules = [
@@ -77,6 +77,9 @@ include-modules = [
     "numpy",
 ]
 sources = ["src_cy/chimerax/carbvis/_utils.pyx"]
+
+[tool.chimerax.package-data]
+"src/" = ["docs/**"]
 
 [tool.basedpyright]
 include = ["src"]

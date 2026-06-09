@@ -1,0 +1,163 @@
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="../userdocs.css" />
+    <title>Command: twister</title>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a name="top"></a>
+    <a href="../index.html">
+      <img
+        width="60px"
+        src="../ChimeraX-docs-icon.svg"
+        alt="ChimeraX docs icon"
+        class="clRighticon"
+        title="User Guide Index"
+    /></a>
+
+    <h3><a href="../index.html#commands">Command</a>: twister</h3>
+
+    <h3 class="usage">
+      <a href="usageconventions.html">Usage</a>: <br /><b>twister</b> [&nbsp;<a
+        href="atomspec.html"
+        ><i>atom-spec</i></a
+      >&nbsp;]
+      [&nbsp;<b>replace</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>update</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>startEndCentroid</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>ribSteps</b>&nbsp;&nbsp;<i>N</i>&nbsp;]
+      [&nbsp;<b>maxRingSize</b>&nbsp;&nbsp;<i>N</i>&nbsp;]
+      [&nbsp;<b>maxPathLen</b>&nbsp;&nbsp;<i>length</i>&nbsp;]
+      [&nbsp;<b>ribWidth</b>&nbsp;&nbsp;<i>width</i>&nbsp;]
+      [&nbsp;<b>ribWeight</b>&nbsp;&nbsp;<i>height</i>&nbsp;]
+      [&nbsp;<b>colorTop</b>&nbsp;&nbsp;<a href="../carbvis.html#linkcmaps"
+        ><i>linkage-colormap</i></a
+      >&nbsp;] [&nbsp;<b>colorBottom</b>&nbsp;&nbsp;<a
+        href="../carbvis.html#linkcmaps"
+        ><i>linkage-colormap</i></a
+      >&nbsp;]
+      [&nbsp;<b>gumTwist</b>&nbsp;&nbsp;true&nbsp;|&nbsp;<b>false</b>&nbsp;]
+    </h3>
+
+    <p>
+      The <b>twister</b> command creates a Twister model for the specified
+      atoms. Each glycosidic linkage is represented by a flat ribbon that twists
+      between the two rings it connects, aligning with the ring planes at each
+      end. The top and bottom sides of each ribbon are colored independently
+      (white and blue by default), showing the relative orientation of
+      successive rings and the degree of backbone twist.
+    </p>
+
+    <p>
+      Twister emphasizes backbone twist and the relative orientation of rings.
+      For ring puckering and absolute ring orientation, see
+      <a href="paperchain.html"><b>paperchain</b></a
+      >. For overall backbone shape and linkage torsion-angle coloring, see
+      <a href="strand.html"><b>strand</b></a
+      >.
+    </p>
+
+    <p>
+      If <i>atom-spec</i> is omitted, all atoms in all open atomic structures
+      are used.
+    </p>
+
+    <p>
+      See also:
+      <a href="../carbvis.html"><b>CarbVis</b></a
+      >, <a href="paperchain.html"><b>paperchain</b></a
+      >,
+      <a href="strand.html"><b>strand</b></a>
+    </p>
+
+    <blockquote>
+      <b>replace</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      Whether to remove existing PaperChain models that overlap the new one
+      (default <b>true</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>update</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      Whether to automatically update the model if the structure changes
+      (default <b>true</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>startEndCentroid</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      When <b>true</b> (default), successive ribbons connect at the centroid of
+      each ring, forming one smooth continuous ribbon that spans the whole
+      molecule. When <b>false</b>, each ribbon segment starts and ends at the
+      atoms involved in the glycosidic linkage rather than at the ring centroid.
+    </blockquote>
+
+    <blockquote>
+      <b>ribSteps</b> &nbsp;<i>N</i>
+      <br />
+      The number of subdivision steps used when rendering each segment of the
+      ribbon (default <b>10</b>). Higher values result in a smoother ribbon
+      curve.
+    </blockquote>
+
+    <blockquote>
+      <b>maxRingSize</b> &nbsp;<i>N</i>
+      <br />
+      Maximum ring size considered when identifying carbohydrate rings (default
+      <b>10</b> atoms).
+    </blockquote>
+
+    <blockquote>
+      <b>maxPathLen</b> &nbsp;<i>length</i>
+      <br />
+      The maximum path length in bonds to search when finding linkages between
+      rings (default <b>5</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>ribWidth</b> &nbsp;<i>width</i>
+      <br />
+      The width of the ribbon in &Aring; (default <b>0.3</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>ribHeight</b> &nbsp;<i>height</i>
+      <br />
+      The thickness of the ribbon in &Aring; (default <b>0.05</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>colorTop</b> &nbsp;<i>linkage-colormap</i>
+      <br />
+      The <a href="../carbvis.html#linkcmaps">linkage colormap</a> used to color
+      the top side of each ribbon (default blue).
+    </blockquote>
+
+    <blockquote>
+      <b>colorBottom</b> &nbsp;<i>linkage-colormap</i>
+      <br />
+      The <a href="../carbvis.html#linkcmaps">linkage colormap</a> used to color
+      the bottom side of each ribbon (default white).
+    </blockquote>
+
+    <blockquote>
+      <b>gumTwist</b> &nbsp;true&nbsp;|&nbsp;<b>false</b>
+      <br />
+      Enables the "Twister Gum" variant (default <b>false</b>). The ribbon is
+      thinned towards its center with a degree proportional to the total angular
+      twist of that segment, and the twist rate is concentrated in the middle of
+      each segment rather than being uniformly distributed along its length.
+    </blockquote>
+
+    <hr />
+    <address>Andre Toerien / University of Cape Town / December 2025</address>
+  </body>
+</html>

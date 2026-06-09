@@ -1,0 +1,157 @@
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="../userdocs.css" />
+    <title>Command: strand</title>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a name="top"></a>
+    <a href="../index.html">
+      <img
+        width="60px"
+        src="../ChimeraX-docs-icon.svg"
+        alt="ChimeraX docs icon"
+        class="clRighticon"
+        title="User Guide Index"
+    /></a>
+
+    <h3><a href="../index.html#commands">Command</a>: strand</h3>
+
+    <h3 class="usage">
+      <a href="usageconventions.html">Usage</a>: <br /><b>strand</b> [&nbsp;<a
+        href="atomspec.html"
+        ><i>atom-spec</i></a
+      >&nbsp;]
+      [&nbsp;<b>replace</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>update</b>&nbsp;&nbsp;<b>true</b>&nbsp;|&nbsp;false&nbsp;]
+      [&nbsp;<b>maxRingSize</b>&nbsp;&nbsp;<i>N</i>&nbsp;]
+      [&nbsp;<b>maxPathLen</b>&nbsp;&nbsp;<i>length</i>&nbsp;]
+      [&nbsp;<b>radius</b>&nbsp;&nbsp;<i>r</i>&nbsp;]
+      [&nbsp;<b>color</b>&nbsp;&nbsp;<a href="../carbvis.html#linkcmaps"
+        ><i>linkage-colormap</i></a
+      >&nbsp;]
+      [&nbsp;<b>candyCane</b>&nbsp;&nbsp;true&nbsp;|&nbsp;<b>false</b>&nbsp;]
+      [&nbsp;<b>sphereRadius</b>&nbsp;&nbsp;<i>r-sphere</i>&nbsp;]
+      [&nbsp;<b>sphereColor</b>&nbsp;&nbsp;<a href="../carbvis.html#ringcmaps"
+        ><i>ring-colormap</i></a
+      >&nbsp;]
+    </h3>
+
+    <p>
+      The <b>strand</b> command creates a Strand model for the specified atoms,
+      inspired by the tube representation used in protein ribbon diagrams. Each
+      glycosidic linkage is drawn as a smooth cylindrical tube whose color
+      encodes the linkage dihedral angles, making unusual glycosidic torsion
+      angles easy to spot while still allowing the overall backbone shape to be
+      followed. Tubes are rendered along smooth curves that pass through the
+      ring centroids and linkage atoms, producing a continuous path through the
+      molecule.
+    </p>
+    <p>
+      An optional sphere at each ring centroid can be added with
+      <b>sphereRadius</b>
+      to make individual linkage boundaries explicit and to provide visual
+      anchors for the start and end of each backbone segment.
+    </p>
+    <p>
+      Strand emphasizes overall backbone shape and torsion angles. For ring
+      puckering and absolute ring orientation, see
+      <a href="paperchain.html"><b>paperchain</b></a
+      >. For backbone twist and relative ring orientation, see
+      <a href="twister.html"><b>twister</b></a
+      >.
+    </p>
+
+    <p>
+      If <i>atom-spec</i> is omitted, all atoms in all open atomic structures
+      are used.
+    </p>
+
+    <p>
+      See also:
+      <a href="../carbvis.html"><b>CarbVis</b></a
+      >, <a href="twister.html"><b>twister</b></a
+      >,
+      <a href="paperchain.html"><b>paperchain</b></a>
+    </p>
+
+    <blockquote>
+      <b>replace</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      Whether to remove existing Strand models that overlap the new one (default
+      <b>true</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>update</b> &nbsp;<b>true</b>&nbsp;|&nbsp;false
+      <br />
+      Whether to automatically update the model if the structure changes
+      (default <b>true</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>maxRingSize</b> &nbsp;<i>N</i>
+      <br />
+      Maximum ring size considered when identifying carbohydrate rings (default
+      <b>10</b> atoms).
+    </blockquote>
+
+    <blockquote>
+      <b>maxPathLen</b> &nbsp;<i>length</i>
+      <br />
+      The maximum path length in bonds to search when finding linkages between
+      rings (default <b>5</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>radius</b> &nbsp;<i>r</i>
+      <br />
+      The radius of the tubes in &Aring; (default <b>0.75</b>).
+    </blockquote>
+
+    <blockquote>
+      <b>color</b> &nbsp;<i>linkage-colormap</i>
+      <br />
+      The <a href="../carbvis.html#linkcmaps">linkage colormap</a> used to color
+      the tubes. Defaults to the
+      <a href="../carbvis.html#linkcmap-default"><b>default</b></a> colormap.
+    </blockquote>
+
+    <blockquote>
+      <b>candyCane</b> &nbsp;true&nbsp;|&nbsp;<b>false</b>
+      <br />
+      Enables the "Candy Cane" rendering variant (default <b>false</b>). The
+      tube cross-section is split into alternating colored and white sectors,
+      producing a striped appearance that follows the backbone twist. Spheres
+      (if enabled) are not striped.
+    </blockquote>
+
+    <blockquote>
+      <b>sphereRadius</b> &nbsp;<i>r-sphere</i>
+      <br />
+      Radius of the sphere drawn at the centroid of each sugar ring, in &Aring;.
+      When omitted, no discrete sphere is added; instead the tube color is
+      blended smoothly through each ring junction. Set <b>sphereRadius</b> to a
+      value larger than <b>radius</b> to render an explicit sphere at every
+      ring.
+    </blockquote>
+
+    <blockquote>
+      <b>sphereColor</b> &nbsp;<i>ring-colormap</i>
+      <br />
+      The <a href="../carbvis.html#ringcmaps">ring colormap</a> used to color
+      the ring spheres. When omitted, the spheres inherit their color from the
+      adjacent tube segments.
+    </blockquote>
+
+    <hr />
+    <address>Andre Toerien / University of Cape Town / December 2025</address>
+  </body>
+</html>

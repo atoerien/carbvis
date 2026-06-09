@@ -1,0 +1,201 @@
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="userdocs.css" />
+    <title>CarbVis - Carbohydrate Visualizations for ChimeraX</title>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a name="top"></a>
+    <a href="index.html">
+      <img
+        width="60px"
+        src="ChimeraX-docs-icon.svg"
+        alt="ChimeraX docs icon"
+        class="clRighticon"
+        title="User Guide Index"
+    /></a>
+
+    <h2>CarbVis - Carbohydrate Visualizations for ChimeraX</h2>
+
+    <p>
+      CarbVis adds carbohydrate-specific visualizations to ChimeraX. The
+      visualizations identify sugar rings and the glycosidic linkages between
+      them, then render abstract 3D representations that highlight backbone
+      shape, ring orientation, puckering, and linkage torsion angles.
+    </p>
+
+    <h3>Commands</h3>
+
+    <ul>
+      <li>
+        <a href="commands/paperchain.html"><b>paperchain</b></a> - create a
+        PaperChain model that renders each sugar ring as a bipyramid colored by
+        ring puckering amplitude, with an optional texture to show ring
+        orientation
+      </li>
+      <li>
+        <a href="commands/twister.html"><b>twister</b></a> - create a Twister
+        model that draws a ribbon through each glycosidic linkage, twisting to
+        align with the ring planes
+      </li>
+      <li>
+        <a href="commands/strand.html"><b>strand</b></a> - create a Strand model
+        that draws a smooth tube through the sugar rings colored by dihedral
+        angles
+      </li>
+      <li>
+        <a href="commands/color_bydihedral.html"><b>color bydihedral</b></a> -
+        color glycosidic linkage bonds by their dihedral angles
+      </li>
+    </ul>
+
+    <h3><a name="linkcmaps">Linkage Colormaps</a></h3>
+
+    <p>
+      The <b>strand</b>, <b>twister</b>, and <b>color bydihedral</b> commands
+      accept a colormap to color linkages. A constant
+      <a href="commands/colornames.html"><i>color-spec</i></a> may also be given
+      instead of a colormap to color all linkages uniformly. Each colormap name
+      may be followed by optional keyword arguments in parentheses.
+    </p>
+
+    <ul>
+      <li>
+        <p>
+          <a name="linkcmap-default"><b>default</b></a>
+          <br />
+          Colors each linkage white-to-red by how closely its dihedral angles
+          match the expected ranges for its anomeric type (&alpha; or &beta;).
+          Linkages within all expected ranges are white; those outside are red.
+        </p>
+        <p>The expected ranges are:</p>
+        <ul>
+          <li>
+            For two-bond linkages (&phi; and &psi;):
+            <ul>
+              <li>
+                &alpha; linkages: &phi; &isin; (&minus;70&deg;, &minus;10&deg;);
+                &beta; linkages: &phi; &isin; (10&deg;, 70&deg;)
+              </li>
+              <li>&psi; &isin; (&minus;45&deg;, 45&deg;)</li>
+            </ul>
+          </li>
+          <li>
+            For three-bond linkages (&phi;, &psi;, and &omega;):
+            <ul>
+              <li>
+                &alpha; linkages: &phi; &isin; (&minus;70&deg;, &minus;10&deg;);
+                &beta; linkages: &phi; &isin; (10&deg;, 70&deg;)
+              </li>
+              <li>&psi; near &plusmn;60&deg; or &plusmn;180&deg;</li>
+              <li>&omega; near &plusmn;60&deg; or &plusmn;180&deg;</li>
+            </ul>
+          </li>
+        </ul>
+        <p>Range edges are smoothed with super-Gaussian functions.</p>
+        <blockquote>
+          <b>palette</b> &nbsp;<i>palette</i>
+          <br />
+          A ChimeraX color <a href="commands/color.html#palette">palette</a>.
+          Default is a white-to-red ramp.
+        </blockquote>
+        <p>Examples:</p>
+        <p>
+          <code>strand color default</code>
+          <br />
+          <code>strand color default(palette="purples")</code>
+        </p>
+      </li>
+
+      <li>
+        <p>
+          <a name="linkcmap-simple"><b>simple</b></a>
+          <br />
+          Colors each two-bond linkage by how well &phi; and &psi; fall within a
+          user-defined rectangular window. Linkages inside the window are white;
+          those outside are red.
+        </p>
+        <p>Range edges are smoothed with super-Gaussian functions.</p>
+        <blockquote>
+          <b>phi_min</b> &nbsp;<i>degrees</i>
+          <br />
+          Lower bound for &phi; (default <b>-60</b>).
+        </blockquote>
+        <blockquote>
+          <b>phi_max</b> &nbsp;<i>degrees</i>
+          <br />
+          Upper bound for &phi; (default <b>60</b>).
+        </blockquote>
+        <blockquote>
+          <b>psi_min</b> &nbsp;<i>degrees</i>
+          <br />
+          Lower bound for &psi; (default <b>-60</b>).
+        </blockquote>
+        <blockquote>
+          <b>psi_max</b> &nbsp;<i>degrees</i>
+          <br />
+          Upper bound for &psi; (default <b>60</b>).
+        </blockquote>
+        <blockquote>
+          <b>palette</b> &nbsp;<i>palette</i>
+          <br />
+          A ChimeraX color <a href="commands/color.html#palette">palette</a>.
+          Default is a white-to-red ramp.
+        </blockquote>
+        <p>Examples:</p>
+        <p>
+          <code>strand color simple(phi_min=-40, phi_max=40)</code>
+        </p>
+      </li>
+
+      <li>
+        <p>
+          <a name="linkcmap-norm"><b>norm</b></a>
+          <br />
+          Colors each linkage by the Euclidean norm of its dihedral angle
+          vector, normalised to [0, 1].
+        </p>
+        <blockquote>
+          <b>palette</b> &nbsp;<i>palette</i>
+          <br />
+          A ChimeraX color <a href="commands/color.html#palette">palette</a>.
+          Default is a white-to-red ramp.
+        </blockquote>
+        <p>Examples:</p>
+        <p>
+          <code>color bydihedral color norm(palette=blues)</code>
+        </p>
+      </li>
+    </ul>
+
+    <h3><a name="ringcmaps">Ring Colormaps</a></h3>
+
+    <p>
+      The <b>paperchain</b> command, and the <b>sphereColor</b> option of
+      <b>strand</b>, accept a ring colormap to color rings, or a constant
+      <a href="commands/colornames.html"><i>color-spec</i></a> to color all
+      rings uniformly.
+    </p>
+
+    <ul>
+      <li>
+        <p>
+          <a name="ringcmap-paperchain"><b>paperchain</b></a>
+          <br />
+          Colors each ring based on its Cremer-Pople puckering amplitude using a
+          hot-to-cold color scale. No arguments are accepted.
+        </p>
+      </li>
+    </ul>
+
+    <hr />
+    <address>Andre Toerien / University of Cape Town / December 2025</address>
+  </body>
+</html>

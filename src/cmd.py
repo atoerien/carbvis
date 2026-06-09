@@ -238,7 +238,7 @@ class LinkageColorArg(CarbColorArg):
         ("tex_period", IntArg),
         ("tex_duty", FloatArg),
     ],
-    synopsis="Adds a PaperChain visualization to structures.",
+    synopsis="add a PaperChain visualization",
 )
 def paperchain(
     session: Session,
@@ -348,7 +348,7 @@ def paperchain(
         ("color_bottom", LinkageColorArg),
         ("gum_twist", BoolArg),
     ],
-    synopsis="Adds a Twister visualization to structures.",
+    synopsis="add a Twister visualization",
 )
 def twister(
     session: Session,
@@ -466,7 +466,7 @@ def twister(
         ("sphere_radius", FloatArg),
         ("sphere_color", RingColorArg),
     ],
-    synopsis="Adds a Strand visualization to structures.",
+    synopsis="add a Strand visualization",
 )
 def strand(
     session: Session,
@@ -572,7 +572,7 @@ def strand(
         ("max_ring_size", IntArg),
         ("max_path_len", IntArg),
     ],
-    synopsis="Color bonds by linkage dihedral angles.",
+    synopsis="color bonds by linkage dihedral angles",
 )
 def color_bydihedral(
     session: Session,

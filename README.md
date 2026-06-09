@@ -23,7 +23,7 @@ environment variable to the full path to the `chimerax` command.
 
 In the ChimeraX command-line, run `paperchain`, `twister`, `strand`, or `color bydihedral` respectively.
 
-Prefix those commands with `help ` to print a list of arguments each command accepts to the console.
+Prefix those commands with `help ` to open the command's documentation page inside ChimeraX.
 
 ## Attribution
 
