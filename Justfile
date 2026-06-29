@@ -1,6 +1,4 @@
-set unstable
-
-export CHIMERAX := env('CHIMERAX', '') || which('ChimeraX') || which('chimerax')
+export CHIMERAX := env("CHIMERAX", "ChimeraX")
 run := CHIMERAX + " --nogui --exit --cmd"
 
 wheel:

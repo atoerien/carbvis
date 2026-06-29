@@ -16,8 +16,8 @@ A [UCSF ChimeraX](https://www.cgl.ucsf.edu/chimerax/) bundle implementing four c
 
 Run `just` to build the Python wheel in `build/`, and `just install` to install it into ChimeraX.
 
-The Justfile searches for the `chimerax` command in `PATH`, if this is not present set the `CHIMERAX`
-environment variable to the full path to the `chimerax` command.
+The Justfile searches for the `ChimeraX` command in `PATH`, if this is not present set the `CHIMERAX`
+environment variable to the full path to the `ChimeraX` command.
 
 ## Usage
 

@@ -1,21 +1,28 @@
 [project]
 name = "ChimeraX-CarbVis"
-version = "0.1"
+version = "0.1.0"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
-    { name = "Andre Toerien", email = "TRNAND009@myuct.ac.za" },
+    { name = "Andre Toerien", email = "andre.toerien8@gmail.com" },
 ]
 description = "Carbohydrate-specific visualisations for ChimeraX"
-dependencies = ["ChimeraX-Core~=1.10.0"]
+dependencies = [
+    "ChimeraX-Core~=1.12.0",
+    "ChimeraX-Arrays~=1.1",
+    "ChimeraX-AtomicLibrary~=14.4",
+]
 dynamic = ["classifiers", "requires-python"]
+
+[project.urls]
+Repository = "https://github.com/atoerien/carbvis.git"
 
 [tool.chimerax]
 pure = false
 min-session-version = 1
 max-session-version = 1
-categories = ["General"]
-classifiers = ["Development Status :: 3 - Alpha"]
+categories = ["Carbohydrates", "Visualization"]
+classifiers = ["Development Status :: 2 - Beta"]
 
 [tool.chimerax.command.paperchain]
 category = "General"
@@ -34,46 +41,81 @@ category = "General"
 synopsis = "color bonds by linkage dihedral angles"
 
 [tool.chimerax.extension._carbs]
+extra-compile-args = ["-g0"]
 include-modules = [
-    "chimerax.arrays",
     "chimerax.atomic_lib",
     "chimerax.core",
     "numpy",
+]
+library-modules = [
+    "chimerax.atomic_lib",
+    "chimerax.core",
+]
+libraries = [
+    "atomstruct",
 ]
 sources = ["src_cy/chimerax/carbvis/_carbs.pyx"]
 
 [tool.chimerax.extension._paperchain]
+extra-compile-args = ["-g0"]
 include-modules = [
     "chimerax.arrays",
     "chimerax.atomic_lib",
     "chimerax.core",
     "numpy",
+]
+library-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+]
+libraries = [
+    "atomstruct",
+    "arrays",
 ]
 sources = ["src_cy/chimerax/carbvis/_paperchain.pyx"]
 
 [tool.chimerax.extension._strand]
+extra-compile-args = ["-g0"]
 include-modules = [
     "chimerax.arrays",
     "chimerax.atomic_lib",
     "chimerax.core",
     "numpy",
+]
+library-modules = [
+    "chimerax.arrays",
+    "chimerax.atomic_lib",
+    "chimerax.core",
+]
+libraries = [
+    "atomstruct",
+    "arrays",
 ]
 sources = ["src_cy/chimerax/carbvis/_strand.pyx"]
 
 [tool.chimerax.extension._twister]
+extra-compile-args = ["-g0"]
 include-modules = [
     "chimerax.arrays",
     "chimerax.atomic_lib",
     "chimerax.core",
     "numpy",
 ]
-sources = ["src_cy/chimerax/carbvis/_twister.pyx"]
-
-[tool.chimerax.extension._utils]
-include-modules = [
+library-modules = [
     "chimerax.arrays",
     "chimerax.atomic_lib",
     "chimerax.core",
+]
+libraries = [
+    "atomstruct",
+    "arrays",
+]
+sources = ["src_cy/chimerax/carbvis/_twister.pyx"]
+
+[tool.chimerax.extension._utils]
+extra-compile-args = ["-g0"]
+include-modules = [
     "numpy",
 ]
 sources = ["src_cy/chimerax/carbvis/_utils.pyx"]
@@ -81,17 +123,24 @@ sources = ["src_cy/chimerax/carbvis/_utils.pyx"]
 [tool.chimerax.package-data]
 "src/" = ["docs/**"]
 
-[tool.basedpyright]
+[tool.pyright]
 include = ["src"]
 typeCheckingMode = "standard"
 
 [tool.ruff]
 builtins = ["line_profile"]
 
+[tool.ruff.lint]
+ignore = [
+    "E741",  # ambiguous-variable-name
+]
+
 [build-system]
 requires = [
     "cython",
     "setuptools",
     "ChimeraX-BundleBuilder",
+    "ChimeraX-Arrays~=1.1",
+    "ChimeraX-AtomicLibrary~=14.4",
 ]
 build-backend = "chimerax.bundle_builder.cx_pep517"
